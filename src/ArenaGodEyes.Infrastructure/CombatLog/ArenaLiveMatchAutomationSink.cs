@@ -10,13 +10,15 @@ using Microsoft.Extensions.Logging;
 
 namespace ArenaGodEyes.Infrastructure.CombatLog;
 
-public sealed class ArenaLiveMatchAutomationSink : ICombatLogEventSink
+public sealed class ArenaLiveMatchAutomationSink : ICombatLogEventSink, ILiveArenaSessionMonitor
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly LocalDataPaths _localDataPaths;
     private readonly ILogger<ArenaLiveMatchAutomationSink> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private LiveArenaSession? _activeSession;
+    private string? _lastCompletedMatchId;
+    private DateTimeOffset? _lastCompletedAt;
 
     public ArenaLiveMatchAutomationSink(
         LocalDataPaths localDataPaths,
@@ -35,6 +37,18 @@ public sealed class ArenaLiveMatchAutomationSink : ICombatLogEventSink
         _logger.LogInformation("New combat log file detected: {Path} at {DetectedAt}", @event.Path, @event.DetectedAt);
         return Task.CompletedTask;
     }
+
+    public LiveArenaSessionStatus GetStatus() =>
+        new(
+            _activeSession is not null,
+            _activeSession?.Bracket,
+            _activeSession?.IsRanked ?? false,
+            _activeSession?.ShouldTrack ?? false,
+            _activeSession?.SourceFile,
+            _activeSession?.StartedAt,
+            _activeSession?.StartedObsAutomatically ?? false,
+            _lastCompletedMatchId,
+            _lastCompletedAt);
 
     public async Task OnCombatLogLineReadAsync(
         CombatLogLineRead @event,
@@ -180,6 +194,8 @@ public sealed class ArenaLiveMatchAutomationSink : ICombatLogEventSink
             var importOrchestrator = scope.ServiceProvider.GetRequiredService<IMatchImportOrchestrator>();
             var importResult = await importOrchestrator.ImportAsync(capturePath, cancellationToken);
             importedMatchId = importResult.Matches.LastOrDefault()?.MatchId;
+            _lastCompletedMatchId = importedMatchId;
+            _lastCompletedAt = DateTimeOffset.UtcNow;
 
             _logger.LogInformation(
                 "Live arena session imported from {CapturePath}. Imported matches: {ImportedMatchCount}. MatchId: {MatchId}",

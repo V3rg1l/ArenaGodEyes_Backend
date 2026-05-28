@@ -45,7 +45,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISettingsValidationService, SettingsValidationService>();
         services.AddSingleton<CombatLogFileReader>();
         services.AddSingleton<CombatLogTailReader>();
-        services.AddSingleton<ICombatLogEventSink, ArenaLiveMatchAutomationSink>();
+        services.AddSingleton<ArenaLiveMatchAutomationSink>();
+        services.AddSingleton<ICombatLogEventSink>(serviceProvider => serviceProvider.GetRequiredService<ArenaLiveMatchAutomationSink>());
+        services.AddSingleton<ILiveArenaSessionMonitor>(serviceProvider => serviceProvider.GetRequiredService<ArenaLiveMatchAutomationSink>());
         services.AddSingleton<IMatchLogWatcher, MatchLogWatcher>();
         services.AddSingleton<ICombatLogImportService, CombatLogImportService>();
         services.AddSingleton<WowKnowledgeService>();
