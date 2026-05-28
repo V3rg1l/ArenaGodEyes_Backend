@@ -121,15 +121,6 @@ public sealed class FirstRunBootstrapService : IFirstRunBootstrapService
             pendingActions.Add("install_addon");
         }
 
-        if (!obsLocalConfiguration.Exists)
-        {
-            pendingActions.Add("install_obs");
-        }
-        else if (!obsLocalConfiguration.ServerEnabled)
-        {
-            pendingActions.Add("restart_obs");
-        }
-
         return new FirstRunBootstrapStatus(
             !string.IsNullOrWhiteSpace(settings.WowRetailPath),
             addonStatus.Installed,
