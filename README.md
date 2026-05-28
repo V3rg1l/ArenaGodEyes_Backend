@@ -39,9 +39,13 @@ Implemented so far:
 - manual ChatGPT prompt export and response import
 - OBS WebSocket status, start, and stop flow
 - FFprobe metadata and FFmpeg thumbnail processing
+- FFmpeg review clip generation from markers, insights, and validation targets
+- WoWInfo-backed class/spec spell enrichment
+- local rule coach inputs through coach knowledge and coach skill persistence
 - xUnit regression coverage for the current foundation
 
 ## Next Step
 
-- FFmpeg clip generation
+- stronger class/spec heuristics and benchmark depth
 - richer video validation persistence tied to imported ChatGPT review data
+- packaged release smoke testing

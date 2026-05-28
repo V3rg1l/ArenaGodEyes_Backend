@@ -10,6 +10,8 @@ public sealed record MatchReviewDetails(
     IReadOnlyList<MatchSpellMetricItem> SpellMetrics,
     IReadOnlyList<CoachKnowledgeParameterItem> CoachKnowledgeParameters,
     IReadOnlyList<CoachSkillItem> CoachSkills,
+    IReadOnlyList<MatchBenchmarkComparisonItem> BenchmarkComparisons,
+    IReadOnlyList<RuleCoachFindingItem> RuleCoachFindings,
     IReadOnlyList<TimelineMarkerItem> TimelineMarkers,
     IReadOnlyList<AnalysisInsightItem> Insights,
     IReadOnlyList<ValidationTargetItem> ValidationTargets,
