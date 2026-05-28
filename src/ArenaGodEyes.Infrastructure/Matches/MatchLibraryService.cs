@@ -109,7 +109,7 @@ public sealed class MatchLibraryService : IMatchLibraryService
             .Take(24)
             .ToListAsync(cancellationToken);
         var specPerformanceSnapshot = BuildSpecPerformanceSnapshot(match);
-        var benchmarkComparisons = BuildBenchmarkComparisons(match, coachKnowledgeParameters, specPerformanceSnapshot);
+        var benchmarkComparisons = BuildBenchmarkComparisons(match, knowledgeParameters, specPerformanceSnapshot);
         var ruleCoachFindings = BuildRuleCoachFindings(match, benchmarkComparisons, coachSkills, specPerformanceSnapshot);
 
         var details = new MatchReviewDetails(
