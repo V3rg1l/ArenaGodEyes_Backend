@@ -1,5 +1,6 @@
 using ArenaGodEyes.ApiLocal.Contracts;
 using ArenaGodEyes.Core.Application.Matches.Abstractions;
+using ArenaGodEyes.Core.Application.Video.Abstractions;
 using ArenaGodEyes.Infrastructure.Settings;
 
 namespace ArenaGodEyes.ApiLocal.Endpoints;
@@ -61,6 +62,7 @@ public static class MatchesEndpoints
             string matchId,
             AttachVideoRequest request,
             IMatchLibraryService matchLibraryService,
+            IVideoWorkflowService videoWorkflowService,
             CancellationToken cancellationToken) =>
         {
             if (string.IsNullOrWhiteSpace(request.VideoPath))
@@ -69,7 +71,17 @@ public static class MatchesEndpoints
             }
 
             var updated = await matchLibraryService.AttachVideoAsync(matchId, request.VideoPath, cancellationToken);
-            return updated ? Results.Ok() : Results.NotFound();
+            if (!updated)
+            {
+                return Results.NotFound();
+            }
+
+            var processing = await videoWorkflowService.ProcessMatchVideoAsync(matchId, cancellationToken);
+            return Results.Ok(new
+            {
+                attached = true,
+                processing
+            });
         });
 
         endpoints.MapPost("/api/matches/{matchId}/export-chatgpt-prompt", async (

@@ -44,6 +44,8 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
         var match = await _dbContext.Matches
             .Include(item => item.TimelineMarkers)
             .Include(item => item.ManualAnalyses)
+            .Include(item => item.AnalysisInsights)
+            .Include(item => item.ValidationTargets)
             .SingleOrDefaultAsync(item => item.MatchId == matchId, cancellationToken);
 
         if (match is null)
@@ -60,10 +62,15 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
 
         var parsedJson = TryParseResponseJson(responseText);
         var markers = ParseMarkers(matchId, parsedJson);
+        var insights = ParseInsights(parsedJson);
+        var validationTargets = ParseValidationTargets(parsedJson);
+        var trainingFocusItems = ParseTrainingFocus(parsedJson);
 
         match.HasManualAnalysis = true;
         match.UpdatedAt = DateTimeOffset.UtcNow;
         _dbContext.TimelineMarkers.RemoveRange(match.TimelineMarkers.Where(marker => marker.Source == "manual_chatgpt"));
+        _dbContext.AnalysisInsights.RemoveRange(match.AnalysisInsights.Where(item => item.Source == "manual_chatgpt"));
+        _dbContext.ValidationTargets.RemoveRange(match.ValidationTargets.Where(item => item.Source == "manual_chatgpt"));
 
         var analysis = new ManualAnalysisEntity
         {
@@ -96,9 +103,136 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
             });
         }
 
+        foreach (var insight in insights)
+        {
+            _dbContext.AnalysisInsights.Add(new AnalysisInsightEntity
+            {
+                Match = match,
+                MatchId = matchId,
+                VideoSecond = insight.VideoSecond,
+                Category = insight.Category,
+                Severity = insight.Severity,
+                Title = insight.Title,
+                Summary = insight.Summary,
+                Evidence = insight.Evidence,
+                Recommendation = insight.Recommendation,
+                Source = insight.Source,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        foreach (var target in validationTargets)
+        {
+            _dbContext.ValidationTargets.Add(new ValidationTargetEntity
+            {
+                Match = match,
+                MatchId = matchId,
+                VideoSecond = target.VideoSecond,
+                Category = target.Category,
+                Metric = target.Metric,
+                CurrentValue = target.CurrentValue,
+                ExpectedValue = target.ExpectedValue,
+                Unit = target.Unit,
+                Note = target.Note,
+                Source = target.Source,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        await UpsertKnowledgeParametersAsync(match, validationTargets, cancellationToken);
+        await UpsertCoachSkillsAsync(match, trainingFocusItems, cancellationToken);
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return new ManualAnalysisImportResult(matchId, responsePath, markers.Count, "manual_chatgpt");
+    }
+
+    private async Task UpsertKnowledgeParametersAsync(
+        MatchRecordEntity match,
+        IReadOnlyList<ValidationTargetItem> validationTargets,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        foreach (var target in validationTargets)
+        {
+            var specLabel = string.IsNullOrWhiteSpace(match.PlayerSpecLabel) ? null : match.PlayerSpecLabel;
+            var existing = await _dbContext.CoachKnowledgeParameters.SingleOrDefaultAsync(
+                item => item.Scope == "spec" &&
+                        item.SpecLabel == specLabel &&
+                        item.Category == target.Category &&
+                        item.Metric == target.Metric,
+                cancellationToken);
+
+            if (existing is null)
+            {
+                _dbContext.CoachKnowledgeParameters.Add(new CoachKnowledgeParameterEntity
+                {
+                    Scope = "spec",
+                    SpecLabel = specLabel,
+                    Category = target.Category,
+                    Metric = target.Metric,
+                    TargetValue = target.ExpectedValue,
+                    Unit = target.Unit,
+                    Note = target.Note,
+                    Source = target.Source,
+                    EvidenceCount = 1,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+
+                continue;
+            }
+
+            existing.TargetValue = target.ExpectedValue ?? existing.TargetValue;
+            existing.Unit = target.Unit ?? existing.Unit;
+            existing.Note = target.Note ?? existing.Note;
+            existing.Source = target.Source;
+            existing.EvidenceCount += 1;
+            existing.UpdatedAt = now;
+        }
+    }
+
+    private async Task UpsertCoachSkillsAsync(
+        MatchRecordEntity match,
+        IReadOnlyList<TrainingFocusItem> trainingFocusItems,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        foreach (var item in trainingFocusItems)
+        {
+            var specLabel = string.IsNullOrWhiteSpace(match.PlayerSpecLabel) ? null : match.PlayerSpecLabel;
+            var existing = await _dbContext.CoachSkills.SingleOrDefaultAsync(
+                skill => skill.Scope == "spec" &&
+                         skill.SpecLabel == specLabel &&
+                         skill.Area == item.Area &&
+                         skill.Goal == item.Goal,
+                cancellationToken);
+
+            if (existing is null)
+            {
+                _dbContext.CoachSkills.Add(new CoachSkillEntity
+                {
+                    Scope = "spec",
+                    SpecLabel = specLabel,
+                    Area = item.Area,
+                    Goal = item.Goal,
+                    Drill = item.Drill,
+                    Source = item.Source,
+                    EvidenceCount = 1,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+
+                continue;
+            }
+
+            existing.Drill = item.Drill ?? existing.Drill;
+            existing.Source = item.Source;
+            existing.EvidenceCount += 1;
+            existing.UpdatedAt = now;
+        }
     }
 
     private static string BuildPrompt(MatchRecordEntity match, string matchJson)
@@ -106,12 +240,15 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
         var builder = new StringBuilder();
         builder.AppendLine("# ArenaGodEyes Manual ChatGPT Review");
         builder.AppendLine();
-        builder.AppendLine("Return a JSON response with:");
+        builder.AppendLine("Return only one JSON object.");
+        builder.AppendLine();
+        builder.AppendLine("Required top-level fields:");
         builder.AppendLine("- summary");
         builder.AppendLine("- mainMistakes");
         builder.AppendLine("- bestPlays");
         builder.AppendLine("- timelineMarkers");
         builder.AppendLine("- trainingFocus");
+        builder.AppendLine("- validationTargets");
         builder.AppendLine();
         builder.AppendLine("Rules:");
         builder.AppendLine("- Use only the provided JSON and data.");
@@ -119,11 +256,73 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
         builder.AppendLine("- If the data is uncertain, say \"possible\".");
         builder.AppendLine("- Be short, direct, and actionable.");
         builder.AppendLine("- Use timestamps whenever possible.");
+        builder.AppendLine("- If you provide timestamps, also provide `videoSecond` when possible.");
+        builder.AppendLine("- Focus on things that can be validated again during video review.");
         builder.AppendLine();
         builder.AppendLine($"MatchId: {match.MatchId}");
         builder.AppendLine($"Bracket: {match.Bracket}");
         builder.AppendLine($"Map: {match.MapName}");
         builder.AppendLine($"DurationSeconds: {match.DurationSeconds}");
+        builder.AppendLine();
+        builder.AppendLine("JSON schema example:");
+        builder.AppendLine("```json");
+        builder.AppendLine("""
+{
+  "summary": "Short review summary.",
+  "mainMistakes": [
+    {
+      "timestamp": "01:24",
+      "videoSecond": 84,
+      "category": "defensive",
+      "severity": "high",
+      "title": "Held major defensive too long",
+      "whatHappened": "Short factual description.",
+      "whyItMatters": "Why this matters.",
+      "betterPlay": "What should have happened.",
+      "evidence": "Match JSON evidence used."
+    }
+  ],
+  "bestPlays": [
+    {
+      "timestamp": "00:43",
+      "videoSecond": 43,
+      "category": "offensive",
+      "title": "Strong setup",
+      "summary": "What was good.",
+      "evidence": "Why this was good."
+    }
+  ],
+  "timelineMarkers": [
+    {
+      "timestamp": "01:24",
+      "videoSecond": 84,
+      "type": "mistake",
+      "label": "Late defensive",
+      "description": "Short timeline note."
+    }
+  ],
+  "trainingFocus": [
+    {
+      "area": "defensive trading",
+      "goal": "Trade earlier into enemy burst",
+      "drill": "Review burst windows and compare cooldown timing."
+    }
+  ],
+  "validationTargets": [
+    {
+      "timestamp": "01:24",
+      "videoSecond": 84,
+      "category": "defensive",
+      "metric": "major_defensive_timing",
+      "currentValue": "late",
+      "expectedValue": "before lethal burst",
+      "unit": "timing",
+      "note": "Can be re-checked in video review."
+    }
+  ]
+}
+""");
+        builder.AppendLine("```");
         builder.AppendLine();
         builder.AppendLine("## Match JSON");
         builder.AppendLine("```json");
@@ -221,6 +420,130 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
             .ToList();
     }
 
+    private static List<AnalysisInsightItem> ParseInsights(JsonNode? responseJson)
+    {
+        var results = new List<AnalysisInsightItem>();
+        if (responseJson is null)
+        {
+            return results;
+        }
+
+        AddInsightsFromArray(results, responseJson["mainMistakes"]?.AsArray(), "mistake", "manual_chatgpt");
+        AddInsightsFromArray(results, responseJson["bestPlays"]?.AsArray(), "best_play", "manual_chatgpt");
+
+        return results
+            .GroupBy(item => new { item.VideoSecond, item.Title, item.Source })
+            .Select(group => group.First())
+            .OrderBy(item => item.VideoSecond)
+            .ThenBy(item => item.Title)
+            .ToList();
+    }
+
+    private static void AddInsightsFromArray(
+        List<AnalysisInsightItem> results,
+        JsonArray? items,
+        string defaultCategory,
+        string source)
+    {
+        if (items is null)
+        {
+            return;
+        }
+
+        foreach (var item in items)
+        {
+            if (item is null)
+            {
+                continue;
+            }
+
+            results.Add(new AnalysisInsightItem(
+                item["videoSecond"]?.GetValue<int?>() ?? ParseTimestampToSeconds(item["timestamp"]?.GetValue<string>()),
+                item["category"]?.GetValue<string>() ?? defaultCategory,
+                item["severity"]?.GetValue<string>() ?? "medium",
+                item["title"]?.GetValue<string>() ?? "Insight",
+                item["summary"]?.GetValue<string>()
+                    ?? item["whatHappened"]?.GetValue<string>()
+                    ?? string.Empty,
+                item["evidence"]?.GetValue<string>() ?? item["whyItMatters"]?.GetValue<string>(),
+                item["betterPlay"]?.GetValue<string>() ?? item["recommendation"]?.GetValue<string>(),
+                source));
+        }
+    }
+
+    private static List<ValidationTargetItem> ParseValidationTargets(JsonNode? responseJson)
+    {
+        var results = new List<ValidationTargetItem>();
+        var items = responseJson?["validationTargets"]?.AsArray();
+        if (items is null)
+        {
+            return results;
+        }
+
+        foreach (var item in items)
+        {
+            if (item is null)
+            {
+                continue;
+            }
+
+            results.Add(new ValidationTargetItem(
+                item["videoSecond"]?.GetValue<int?>() ?? ParseTimestampToSeconds(item["timestamp"]?.GetValue<string>()),
+                item["category"]?.GetValue<string>() ?? "validation",
+                item["metric"]?.GetValue<string>() ?? "unknown_metric",
+                item["currentValue"]?.GetValue<string>(),
+                item["expectedValue"]?.GetValue<string>(),
+                item["unit"]?.GetValue<string>(),
+                item["note"]?.GetValue<string>(),
+                "manual_chatgpt"));
+        }
+
+        return results
+            .GroupBy(item => new { item.VideoSecond, item.Metric, item.Source })
+            .Select(group => group.First())
+            .OrderBy(item => item.VideoSecond)
+            .ThenBy(item => item.Metric)
+            .ToList();
+    }
+
+    private static List<TrainingFocusItem> ParseTrainingFocus(JsonNode? responseJson)
+    {
+        var results = new List<TrainingFocusItem>();
+        var items = responseJson?["trainingFocus"]?.AsArray();
+        if (items is null)
+        {
+            return results;
+        }
+
+        foreach (var item in items)
+        {
+            if (item is null)
+            {
+                continue;
+            }
+
+            var area = item["area"]?.GetValue<string>();
+            var goal = item["goal"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(area) || string.IsNullOrWhiteSpace(goal))
+            {
+                continue;
+            }
+
+            results.Add(new TrainingFocusItem(
+                area,
+                goal,
+                item["drill"]?.GetValue<string>(),
+                "manual_chatgpt"));
+        }
+
+        return results
+            .GroupBy(item => new { item.Area, item.Goal, item.Source })
+            .Select(group => group.First())
+            .OrderBy(item => item.Area)
+            .ThenBy(item => item.Goal)
+            .ToList();
+    }
+
     private static int? ParseTimestampToSeconds(string? timestamp)
     {
         if (string.IsNullOrWhiteSpace(timestamp))
@@ -240,4 +563,10 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
             _ => null
         };
     }
+
+    private sealed record TrainingFocusItem(
+        string Area,
+        string Goal,
+        string? Drill,
+        string Source);
 }

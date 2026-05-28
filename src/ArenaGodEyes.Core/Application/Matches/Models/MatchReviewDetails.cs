@@ -5,4 +5,11 @@ public sealed record MatchReviewDetails(
     string MatchJson,
     string? PromptText,
     string? ManualAnalysisText,
-    IReadOnlyList<TimelineMarkerItem> TimelineMarkers);
+    MatchMetricSummaryItem? MetricSummary,
+    IReadOnlyList<MatchSpellMetricItem> SpellMetrics,
+    IReadOnlyList<CoachKnowledgeParameterItem> CoachKnowledgeParameters,
+    IReadOnlyList<CoachSkillItem> CoachSkills,
+    IReadOnlyList<TimelineMarkerItem> TimelineMarkers,
+    IReadOnlyList<AnalysisInsightItem> Insights,
+    IReadOnlyList<ValidationTargetItem> ValidationTargets,
+    IReadOnlyList<VideoClipItem> VideoClips);

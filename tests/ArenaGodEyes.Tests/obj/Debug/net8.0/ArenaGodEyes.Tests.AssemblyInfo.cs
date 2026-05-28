@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ArenaGodEyes.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a9497ff7f123d362c543f2a4b7d56312c63043cb")]
 [assembly: System.Reflection.AssemblyProductAttribute("ArenaGodEyes.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ArenaGodEyes.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

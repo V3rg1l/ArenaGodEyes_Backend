@@ -6,7 +6,8 @@ ApiLocal is the local HTTP surface for the desktop-facing backend.
 
 - expose health and identity endpoints
 - expose settings endpoints
-- expose log import endpoints
+- expose match import and review endpoints
+- expose OBS and video endpoints
 - host the dependency injection composition root
 - run watcher-related hosted services
 

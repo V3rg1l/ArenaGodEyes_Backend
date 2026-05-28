@@ -27,6 +27,7 @@ public sealed class DatabaseInitializerHostedService : IHostedService
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ArenaGodEyesDbContext>();
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await DatabaseSchemaUpgrader.EnsureLatestAsync(_localDataPaths.DatabasePath, cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

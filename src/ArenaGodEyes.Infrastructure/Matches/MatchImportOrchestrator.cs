@@ -112,6 +112,7 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await PersistMetricsAsync(entity, candidate.Lines, candidate.StartedAt, cancellationToken);
 
         _logger.LogInformation("Imported match {MatchId} from {SourceFile}", matchId, sourceFilePath);
 
@@ -123,6 +124,61 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
             entity.DurationSeconds,
             chunkPath,
             jsonPath);
+    }
+
+    private async Task PersistMetricsAsync(
+        MatchRecordEntity match,
+        IReadOnlyList<ParsedCombatLogLine> lines,
+        DateTimeOffset startedAt,
+        CancellationToken cancellationToken)
+    {
+        var metrics = MatchMetricsCalculator.CalculateStructured(lines, startedAt, match.DurationSeconds);
+
+        var existingSummary = await _dbContext.MatchMetricSummaries
+            .SingleOrDefaultAsync(item => item.MatchId == match.MatchId, cancellationToken);
+        if (existingSummary is not null)
+        {
+            _dbContext.MatchMetricSummaries.Remove(existingSummary);
+        }
+
+        var existingSpellMetrics = await _dbContext.MatchSpellMetrics
+            .Where(item => item.MatchId == match.MatchId)
+            .ToListAsync(cancellationToken);
+        if (existingSpellMetrics.Count > 0)
+        {
+            _dbContext.MatchSpellMetrics.RemoveRange(existingSpellMetrics);
+        }
+
+        _dbContext.MatchMetricSummaries.Add(new MatchMetricSummaryEntity
+        {
+            Match = match,
+            MatchId = match.MatchId,
+            TotalCasts = metrics.Summary.TotalCasts,
+            TotalDamage = metrics.Summary.TotalDamage,
+            TotalHealing = metrics.Summary.TotalHealing,
+            InterruptCount = metrics.Summary.InterruptCount,
+            DeathCount = metrics.Summary.DeathCount,
+            DamagePerSecond = metrics.Summary.DamagePerSecond,
+            HealingPerSecond = metrics.Summary.HealingPerSecond,
+            CastsPerMinute = metrics.Summary.CastsPerMinute,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+
+        foreach (var spellMetric in metrics.SpellMetrics)
+        {
+            _dbContext.MatchSpellMetrics.Add(new MatchSpellMetricEntity
+            {
+                Match = match,
+                MatchId = match.MatchId,
+                SpellName = spellMetric.SpellName,
+                CastCount = spellMetric.CastCount,
+                TotalDamage = spellMetric.TotalDamage,
+                TotalHealing = spellMetric.TotalHealing,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static List<MatchCandidate> BuildMatchCandidates(IReadOnlyList<ParsedCombatLogLine> parsedLines)
@@ -551,6 +607,46 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
     {
         public static object Calculate(IReadOnlyList<ParsedCombatLogLine> lines, DateTimeOffset startedAt)
         {
+            var structured = CalculateStructured(lines, startedAt, null);
+
+            return new
+            {
+                summary = new
+                {
+                    totalCasts = structured.Summary.TotalCasts,
+                    totalDamage = structured.Summary.TotalDamage,
+                    totalHealing = structured.Summary.TotalHealing,
+                    interruptCount = structured.Summary.InterruptCount,
+                    deathCount = structured.Summary.DeathCount
+                },
+                casts = structured.SpellMetrics
+                    .Where(item => item.CastCount > 0)
+                    .OrderByDescending(item => item.CastCount)
+                    .Take(15)
+                    .Select(item => new { spell = item.SpellName, count = item.CastCount })
+                    .ToList(),
+                damageDone = structured.SpellMetrics
+                    .Where(item => item.TotalDamage > 0)
+                    .OrderByDescending(item => item.TotalDamage)
+                    .Take(15)
+                    .Select(item => new { spell = item.SpellName, amount = item.TotalDamage })
+                    .ToList(),
+                healingDone = structured.SpellMetrics
+                    .Where(item => item.TotalHealing > 0)
+                    .OrderByDescending(item => item.TotalHealing)
+                    .Take(15)
+                    .Select(item => new { spell = item.SpellName, amount = item.TotalHealing })
+                    .ToList(),
+                interrupts = structured.Interrupts,
+                deaths = structured.Deaths
+            };
+        }
+
+        public static StructuredMetricsResult CalculateStructured(
+            IReadOnlyList<ParsedCombatLogLine> lines,
+            DateTimeOffset startedAt,
+            int? durationSeconds)
+        {
             var casts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var damage = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             var healing = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
@@ -600,34 +696,34 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
                 }
             }
 
-            return new
-            {
-                summary = new
-                {
-                    totalCasts = casts.Values.Sum(),
-                    totalDamage = damage.Values.Sum(),
-                    totalHealing = healing.Values.Sum(),
-                    interruptCount = interrupts.Count,
-                    deathCount = deaths.Count
-                },
-                casts = casts
-                    .OrderByDescending(entry => entry.Value)
-                    .Take(15)
-                    .Select(entry => new { spell = entry.Key, count = entry.Value })
-                    .ToList(),
-                damageDone = damage
-                    .OrderByDescending(entry => entry.Value)
-                    .Take(15)
-                    .Select(entry => new { spell = entry.Key, amount = entry.Value })
-                    .ToList(),
-                healingDone = healing
-                    .OrderByDescending(entry => entry.Value)
-                    .Take(15)
-                    .Select(entry => new { spell = entry.Key, amount = entry.Value })
+            var allSpellNames = casts.Keys
+                .Concat(damage.Keys)
+                .Concat(healing.Keys)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var effectiveDuration = Math.Max(1, durationSeconds ?? ToRelativeSeconds(lines.LastOrDefault()?.Timestamp, startedAt));
+
+            return new StructuredMetricsResult(
+                new StructuredMetricSummary(
+                    casts.Values.Sum(),
+                    damage.Values.Sum(),
+                    healing.Values.Sum(),
+                    interrupts.Count,
+                    deaths.Count,
+                    Math.Round(damage.Values.Sum() / (double)effectiveDuration, 2),
+                    Math.Round(healing.Values.Sum() / (double)effectiveDuration, 2),
+                    Math.Round(casts.Values.Sum() / Math.Max(1d, effectiveDuration / 60d), 2)),
+                allSpellNames
+                    .Select(spellName => new StructuredSpellMetric(
+                        spellName,
+                        casts.TryGetValue(spellName, out var castCount) ? castCount : 0,
+                        damage.TryGetValue(spellName, out var totalDamage) ? totalDamage : 0,
+                        healing.TryGetValue(spellName, out var totalHealing) ? totalHealing : 0))
+                    .OrderByDescending(item => item.TotalDamage + item.TotalHealing)
+                    .ThenByDescending(item => item.CastCount)
                     .ToList(),
                 interrupts,
-                deaths
-            };
+                deaths);
         }
 
         private static int ToRelativeSeconds(DateTimeOffset? timestamp, DateTimeOffset startedAt)
@@ -653,6 +749,28 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
             return 0;
         }
     }
+
+    private sealed record StructuredMetricsResult(
+        StructuredMetricSummary Summary,
+        IReadOnlyList<StructuredSpellMetric> SpellMetrics,
+        IReadOnlyList<object> Interrupts,
+        IReadOnlyList<object> Deaths);
+
+    private sealed record StructuredMetricSummary(
+        int TotalCasts,
+        long TotalDamage,
+        long TotalHealing,
+        int InterruptCount,
+        int DeathCount,
+        double DamagePerSecond,
+        double HealingPerSecond,
+        double CastsPerMinute);
+
+    private sealed record StructuredSpellMetric(
+        string SpellName,
+        int CastCount,
+        long TotalDamage,
+        long TotalHealing);
 
     private static class MatchJsonBuilder
     {

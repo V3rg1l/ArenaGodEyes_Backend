@@ -58,6 +58,18 @@ public sealed class SettingsValidationService : ISettingsValidationService
             messages.Add("Recording cache directory was not found.");
         }
 
+        if (!string.IsNullOrWhiteSpace(settings.FfmpegExecutablePath) &&
+            !_fileSystem.FileExists(settings.FfmpegExecutablePath))
+        {
+            messages.Add("Configured FFmpeg executable path was not found.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(settings.FfprobeExecutablePath) &&
+            !_fileSystem.FileExists(settings.FfprobeExecutablePath))
+        {
+            messages.Add("Configured FFprobe executable path was not found.");
+        }
+
         return new SettingsValidationResult(
             messages.Count == 0,
             wowRetailPathExists,

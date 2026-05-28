@@ -15,7 +15,7 @@ It is responsible for:
 - match detection
 - SQLite persistence
 - OBS WebSocket integration
-- future FFmpeg utilities
+- FFmpeg-based video processing
 - manual ChatGPT import and export support
 - local coaching data
 - local APIs consumed by the desktop shell and UI
@@ -27,16 +27,21 @@ It is responsible for:
 - `src/ArenaGodEyes.ApiLocal`
 - `tests/ArenaGodEyes.Tests`
 
-## Current Repo Reality
+## Current State
 
 Implemented so far:
 
 - clean backend structure
 - safety-aware API root
 - settings detection, validation, and addon installation flow
-- combat log watcher and import foundation
-- focused xUnit regression coverage
+- combat log watcher and live match automation
+- match import, JSON export, and SQLite persistence
+- manual ChatGPT prompt export and response import
+- OBS WebSocket status, start, and stop flow
+- FFprobe metadata and FFmpeg thumbnail processing
+- xUnit regression coverage for the current foundation
 
-## Canonical Next Major Step
+## Next Step
 
-The updated architecture plan now puts the proper Electron desktop shell before more backend expansion.
+- FFmpeg clip generation
+- richer video validation persistence tied to imported ChatGPT review data

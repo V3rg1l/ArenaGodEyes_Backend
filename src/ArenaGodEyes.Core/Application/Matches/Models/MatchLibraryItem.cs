@@ -13,4 +13,8 @@ public sealed record MatchLibraryItem(
     bool HasManualAnalysis,
     int TimelineMarkerCount,
     string MatchJsonPath,
-    string? VideoLocalPath);
+    string? VideoLocalPath,
+    string? ThumbnailPath,
+    string? RecordingStatus,
+    double? VideoDurationSeconds,
+    string? VideoResolution);

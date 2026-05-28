@@ -32,4 +32,5 @@ app.MapImportEndpoints();
 app.MapMatchesEndpoints();
 app.MapSystemEndpoints();
 app.MapSettingsEndpoints();
+app.MapVideoEndpoints();
 app.Run();

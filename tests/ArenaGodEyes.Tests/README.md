@@ -7,4 +7,5 @@ Tests mirror backend behavior and should follow focused AAA-style xUnit cases.
 - domain primitives
 - settings behavior
 - combat log watcher behavior
-- early regression protection for the project foundation
+- combat log parsing behavior
+- early regression protection for the current backend foundation

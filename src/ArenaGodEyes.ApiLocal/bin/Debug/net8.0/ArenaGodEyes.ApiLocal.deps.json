@@ -342,10 +342,7 @@
       "System.Memory/4.5.3": {},
       "ArenaGodEyes.Core/1.0.0": {
         "runtime": {
-          "ArenaGodEyes.Core.dll": {
-            "assemblyVersion": "1.0.0",
-            "fileVersion": "1.0.0.0"
-          }
+          "ArenaGodEyes.Core.dll": {}
         }
       },
       "ArenaGodEyes.Infrastructure/1.0.0": {
@@ -358,10 +355,7 @@
           "Microsoft.Extensions.Logging.Abstractions": "8.0.2"
         },
         "runtime": {
-          "ArenaGodEyes.Infrastructure.dll": {
-            "assemblyVersion": "1.0.0",
-            "fileVersion": "1.0.0.0"
-          }
+          "ArenaGodEyes.Infrastructure.dll": {}
         }
       }
     }

@@ -24,6 +24,14 @@ public sealed class AppSettings
 
     public bool EnableObsAutoConnect { get; set; } = true;
 
+    public int ObsConnectTimeoutSeconds { get; set; } = 5;
+
+    public string? FfmpegExecutablePath { get; set; }
+
+    public string? FfprobeExecutablePath { get; set; }
+
+    public int VideoThumbnailSecond { get; set; } = 5;
+
     public int MaxDiskStorageGb { get; set; } = 100;
 
     public int MaxMatchFiles { get; set; } = 1000;

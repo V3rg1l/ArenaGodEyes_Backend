@@ -371,10 +371,7 @@
       "System.Memory/4.5.3": {},
       "ArenaGodEyes.Core/1.0.0": {
         "runtime": {
-          "ArenaGodEyes.Core.dll": {
-            "assemblyVersion": "1.0.0",
-            "fileVersion": "1.0.0.0"
-          }
+          "ArenaGodEyes.Core.dll": {}
         }
       }
     }

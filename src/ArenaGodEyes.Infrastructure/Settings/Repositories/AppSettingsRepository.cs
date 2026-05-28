@@ -71,6 +71,10 @@ public sealed class AppSettingsRepository : IAppSettingsRepository
                 "temp"),
             ObsHost = "127.0.0.1",
             ObsPort = 4455,
+            ObsConnectTimeoutSeconds = 5,
+            FfmpegExecutablePath = null,
+            FfprobeExecutablePath = null,
+            VideoThumbnailSecond = 5,
             CreatedAt = now,
             UpdatedAt = now
         };

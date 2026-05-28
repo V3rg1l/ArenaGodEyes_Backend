@@ -9,5 +9,7 @@ Infrastructure contains concrete adapters and wiring for interfaces defined in C
 - addon installation and status
 - settings persistence
 - combat log watcher implementation
-- future SQLite persistence
-- future OBS and FFmpeg integrations
+- SQLite persistence
+- OBS WebSocket integration
+- FFprobe and FFmpeg processing
+- live arena session automation

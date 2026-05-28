@@ -12,4 +12,5 @@ Core contains business-facing code that stays independent from transport, UI, an
 - safety-aware domain primitives
 - settings contracts
 - combat log contracts
-- future parser, match, metrics, and coaching contracts
+- match, manual-analysis, and video contracts
+- coaching and metrics contracts that remain UI-agnostic
