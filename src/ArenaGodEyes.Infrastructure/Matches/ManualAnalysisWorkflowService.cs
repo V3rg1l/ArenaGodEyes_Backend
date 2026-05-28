@@ -156,40 +156,30 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
 
         foreach (var target in validationTargets)
         {
+            var className = string.IsNullOrWhiteSpace(match.PlayerClassName) ? null : match.PlayerClassName;
             var specLabel = string.IsNullOrWhiteSpace(match.PlayerSpecLabel) ? null : match.PlayerSpecLabel;
-            var existing = await _dbContext.CoachKnowledgeParameters.SingleOrDefaultAsync(
-                item => item.Scope == "spec" &&
-                        item.SpecLabel == specLabel &&
-                        item.Category == target.Category &&
-                        item.Metric == target.Metric,
-                cancellationToken);
 
-            if (existing is null)
+            if (!string.IsNullOrWhiteSpace(className))
             {
-                _dbContext.CoachKnowledgeParameters.Add(new CoachKnowledgeParameterEntity
-                {
-                    Scope = "spec",
-                    SpecLabel = specLabel,
-                    Category = target.Category,
-                    Metric = target.Metric,
-                    TargetValue = target.ExpectedValue,
-                    Unit = target.Unit,
-                    Note = target.Note,
-                    Source = target.Source,
-                    EvidenceCount = 1,
-                    CreatedAt = now,
-                    UpdatedAt = now
-                });
-
-                continue;
+                await UpsertKnowledgeParameterAsync(
+                    "class",
+                    className,
+                    null,
+                    target,
+                    now,
+                    cancellationToken);
             }
 
-            existing.TargetValue = target.ExpectedValue ?? existing.TargetValue;
-            existing.Unit = target.Unit ?? existing.Unit;
-            existing.Note = target.Note ?? existing.Note;
-            existing.Source = target.Source;
-            existing.EvidenceCount += 1;
-            existing.UpdatedAt = now;
+            if (!string.IsNullOrWhiteSpace(specLabel))
+            {
+                await UpsertKnowledgeParameterAsync(
+                    "spec",
+                    className,
+                    specLabel,
+                    target,
+                    now,
+                    cancellationToken);
+            }
         }
     }
 
@@ -202,37 +192,117 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
 
         foreach (var item in trainingFocusItems)
         {
+            var className = string.IsNullOrWhiteSpace(match.PlayerClassName) ? null : match.PlayerClassName;
             var specLabel = string.IsNullOrWhiteSpace(match.PlayerSpecLabel) ? null : match.PlayerSpecLabel;
-            var existing = await _dbContext.CoachSkills.SingleOrDefaultAsync(
-                skill => skill.Scope == "spec" &&
-                         skill.SpecLabel == specLabel &&
-                         skill.Area == item.Area &&
-                         skill.Goal == item.Goal,
-                cancellationToken);
 
-            if (existing is null)
+            if (!string.IsNullOrWhiteSpace(className))
             {
-                _dbContext.CoachSkills.Add(new CoachSkillEntity
-                {
-                    Scope = "spec",
-                    SpecLabel = specLabel,
-                    Area = item.Area,
-                    Goal = item.Goal,
-                    Drill = item.Drill,
-                    Source = item.Source,
-                    EvidenceCount = 1,
-                    CreatedAt = now,
-                    UpdatedAt = now
-                });
-
-                continue;
+                await UpsertCoachSkillAsync(
+                    "class",
+                    className,
+                    null,
+                    item,
+                    now,
+                    cancellationToken);
             }
 
-            existing.Drill = item.Drill ?? existing.Drill;
-            existing.Source = item.Source;
-            existing.EvidenceCount += 1;
-            existing.UpdatedAt = now;
+            if (!string.IsNullOrWhiteSpace(specLabel))
+            {
+                await UpsertCoachSkillAsync(
+                    "spec",
+                    className,
+                    specLabel,
+                    item,
+                    now,
+                    cancellationToken);
+            }
         }
+    }
+
+    private async Task UpsertKnowledgeParameterAsync(
+        string scope,
+        string? className,
+        string? specLabel,
+        ValidationTargetItem target,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _dbContext.CoachKnowledgeParameters.SingleOrDefaultAsync(
+            item => item.Scope == scope &&
+                    item.ClassName == className &&
+                    item.SpecLabel == specLabel &&
+                    item.Category == target.Category &&
+                    item.Metric == target.Metric,
+            cancellationToken);
+
+        if (existing is null)
+        {
+            _dbContext.CoachKnowledgeParameters.Add(new CoachKnowledgeParameterEntity
+            {
+                Scope = scope,
+                ClassName = className,
+                SpecLabel = specLabel,
+                Category = target.Category,
+                Metric = target.Metric,
+                TargetValue = target.ExpectedValue,
+                Unit = target.Unit,
+                Note = target.Note,
+                Source = target.Source,
+                EvidenceCount = 1,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+
+            return;
+        }
+
+        existing.TargetValue = target.ExpectedValue ?? existing.TargetValue;
+        existing.Unit = target.Unit ?? existing.Unit;
+        existing.Note = target.Note ?? existing.Note;
+        existing.Source = target.Source;
+        existing.EvidenceCount += 1;
+        existing.UpdatedAt = now;
+    }
+
+    private async Task UpsertCoachSkillAsync(
+        string scope,
+        string? className,
+        string? specLabel,
+        TrainingFocusItem item,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _dbContext.CoachSkills.SingleOrDefaultAsync(
+            skill => skill.Scope == scope &&
+                     skill.ClassName == className &&
+                     skill.SpecLabel == specLabel &&
+                     skill.Area == item.Area &&
+                     skill.Goal == item.Goal,
+            cancellationToken);
+
+        if (existing is null)
+        {
+            _dbContext.CoachSkills.Add(new CoachSkillEntity
+            {
+                Scope = scope,
+                ClassName = className,
+                SpecLabel = specLabel,
+                Area = item.Area,
+                Goal = item.Goal,
+                Drill = item.Drill,
+                Source = item.Source,
+                EvidenceCount = 1,
+                CreatedAt = now,
+                UpdatedAt = now
+            });
+
+            return;
+        }
+
+        existing.Drill = item.Drill ?? existing.Drill;
+        existing.Source = item.Source;
+        existing.EvidenceCount += 1;
+        existing.UpdatedAt = now;
     }
 
     private static string BuildPrompt(MatchRecordEntity match, string matchJson)

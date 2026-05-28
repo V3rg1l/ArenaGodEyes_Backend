@@ -20,15 +20,18 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
     private readonly ArenaGodEyesDbContext _dbContext;
     private readonly LocalDataPaths _localDataPaths;
     private readonly ILogger<MatchImportOrchestrator> _logger;
+    private readonly WowKnowledgeService _wowKnowledgeService;
 
     public MatchImportOrchestrator(
         ArenaGodEyesDbContext dbContext,
         LocalDataPaths localDataPaths,
-        ILogger<MatchImportOrchestrator> logger)
+        ILogger<MatchImportOrchestrator> logger,
+        WowKnowledgeService wowKnowledgeService)
     {
         _dbContext = dbContext;
         _localDataPaths = localDataPaths;
         _logger = logger;
+        _wowKnowledgeService = wowKnowledgeService;
     }
 
     public async Task<ImportedMatchesResult> ImportAsync(string sourceFilePath, CancellationToken cancellationToken = default)
@@ -111,6 +114,14 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
             _dbContext.Matches.Add(entity);
         }
 
+        if (string.IsNullOrWhiteSpace(entity.PlayerSpecLabel) ||
+            string.Equals(entity.PlayerSpecLabel, "Unknown Spec", StringComparison.OrdinalIgnoreCase))
+        {
+            entity.PlayerSpecLabel = candidate.PlayerSpecLabel;
+        }
+
+        entity.PlayerClassName ??= candidate.PlayerClassName;
+
         await _dbContext.SaveChangesAsync(cancellationToken);
         await PersistMetricsAsync(entity, candidate.Lines, candidate.StartedAt, cancellationToken);
 
@@ -133,6 +144,20 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
         CancellationToken cancellationToken)
     {
         var metrics = MatchMetricsCalculator.CalculateStructured(lines, startedAt, match.DurationSeconds);
+        var playerSpellNames = metrics.PlayerSpellNamesBySourceGuid.TryGetValue(match.PlayerGuid ?? string.Empty, out var trackedPlayerSpellNames)
+            ? trackedPlayerSpellNames
+            : [];
+        var inferredProfile = _wowKnowledgeService.InferPlayerProfile(playerSpellNames, match.PlayerSpecLabel);
+
+        if (!string.IsNullOrWhiteSpace(inferredProfile.ClassName))
+        {
+            match.PlayerClassName = inferredProfile.ClassName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(inferredProfile.SpecLabel))
+        {
+            match.PlayerSpecLabel = inferredProfile.SpecLabel;
+        }
 
         var existingSummary = await _dbContext.MatchMetricSummaries
             .SingleOrDefaultAsync(item => item.MatchId == match.MatchId, cancellationToken);
@@ -166,14 +191,25 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
 
         foreach (var spellMetric in metrics.SpellMetrics)
         {
+            var enriched = _wowKnowledgeService.EnrichSpell(
+                spellMetric.SpellName,
+                match.PlayerClassName,
+                match.PlayerSpecLabel);
+
             _dbContext.MatchSpellMetrics.Add(new MatchSpellMetricEntity
             {
                 Match = match,
                 MatchId = match.MatchId,
                 SpellName = spellMetric.SpellName,
+                NormalizedSpellName = enriched.NormalizedSpellName,
                 CastCount = spellMetric.CastCount,
                 TotalDamage = spellMetric.TotalDamage,
                 TotalHealing = spellMetric.TotalHealing,
+                ClassName = enriched.ClassName,
+                SpecLabel = enriched.SpecLabel,
+                PrimaryCategory = enriched.PrimaryCategory,
+                TacticalPhase = enriched.TacticalPhase,
+                IsSignatureSpell = enriched.IsSignatureSpell,
                 CreatedAt = DateTimeOffset.UtcNow
             });
         }
@@ -261,6 +297,8 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
 
         public string? PlayerName { get; private set; }
 
+        public string? PlayerClassName { get; private set; }
+
         public string? PlayerSpecLabel { get; private set; }
 
         public string? ResultForPlayer { get; private set; }
@@ -310,6 +348,7 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
 
             PlayerGuid = candidatePlayer?.Guid;
             PlayerName = candidatePlayer?.GetDisplayName();
+            PlayerClassName = candidatePlayer?.ClassName;
             PlayerSpecLabel = candidatePlayer?.SpecLabel;
 
             if (candidatePlayer is not null && WinningTeamId.HasValue)
@@ -328,6 +367,7 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
                 region = combatant.GetRegion(),
                 teamId = combatant.TeamId,
                 classId = combatant.ClassId,
+                className = combatant.ClassName,
                 specId = combatant.SpecId,
                 specLabel = combatant.SpecLabel,
                 personalRating = combatant.PersonalRating,
@@ -390,6 +430,7 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
                 Guid = guid,
                 TeamId = ParseInt(line.Fields[2]),
                 ClassId = 0,
+                ClassName = null,
                 SpecId = 0,
                 SpecLabel = "Unknown Spec",
                 PersonalRating = personalRating,
@@ -438,6 +479,8 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
     private sealed class CombatantRecord
     {
         public int ClassId { get; set; }
+
+        public string? ClassName { get; set; }
 
         public string? FullName { get; set; }
 
@@ -650,11 +693,14 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
             var casts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var damage = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             var healing = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            var playerSpellNamesBySourceGuid = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             var interrupts = new List<object>();
             var deaths = new List<object>();
 
             foreach (var line in lines)
             {
+                TrackPlayerSpell(playerSpellNamesBySourceGuid, line);
+
                 if (string.Equals(line.EventName, "SPELL_CAST_SUCCESS", StringComparison.Ordinal))
                 {
                     var key = line.Fields.ElementAtOrDefault(10)?.Trim('"') ?? "Unknown Spell";
@@ -722,8 +768,35 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
                     .OrderByDescending(item => item.TotalDamage + item.TotalHealing)
                     .ThenByDescending(item => item.CastCount)
                     .ToList(),
+                playerSpellNamesBySourceGuid,
                 interrupts,
                 deaths);
+        }
+
+        private static void TrackPlayerSpell(
+            IDictionary<string, List<string>> playerSpellNamesBySourceGuid,
+            ParsedCombatLogLine line)
+        {
+            var sourceGuid = line.Fields.ElementAtOrDefault(1)?.Trim('"');
+            var spellName = line.Fields.ElementAtOrDefault(10)?.Trim('"');
+            if (string.IsNullOrWhiteSpace(sourceGuid) || string.IsNullOrWhiteSpace(spellName))
+            {
+                return;
+            }
+
+            if (!line.EventName.Contains("SPELL_", StringComparison.Ordinal) &&
+                !line.EventName.Contains("RANGE_", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!playerSpellNamesBySourceGuid.TryGetValue(sourceGuid, out var spellNames))
+            {
+                spellNames = [];
+                playerSpellNamesBySourceGuid[sourceGuid] = spellNames;
+            }
+
+            spellNames.Add(spellName);
         }
 
         private static int ToRelativeSeconds(DateTimeOffset? timestamp, DateTimeOffset startedAt)
@@ -753,6 +826,7 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
     private sealed record StructuredMetricsResult(
         StructuredMetricSummary Summary,
         IReadOnlyList<StructuredSpellMetric> SpellMetrics,
+        IReadOnlyDictionary<string, List<string>> PlayerSpellNamesBySourceGuid,
         IReadOnlyList<object> Interrupts,
         IReadOnlyList<object> Deaths);
 

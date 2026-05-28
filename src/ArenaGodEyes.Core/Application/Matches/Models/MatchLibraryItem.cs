@@ -8,6 +8,7 @@ public sealed record MatchLibraryItem(
     int DurationSeconds,
     string? ResultForPlayer,
     string? PlayerName,
+    string? PlayerClassName,
     string? PlayerSpecLabel,
     bool HasVideo,
     bool HasManualAnalysis,

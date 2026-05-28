@@ -85,14 +85,24 @@ public sealed class MatchLibraryService : IMatchLibraryService
 
         var knowledgeParameters = await _dbContext.CoachKnowledgeParameters
             .Where(item => item.Scope == "global" ||
-                           (!string.IsNullOrWhiteSpace(match.PlayerSpecLabel) && item.SpecLabel == match.PlayerSpecLabel))
+                           (!string.IsNullOrWhiteSpace(match.PlayerClassName) &&
+                            item.Scope == "class" &&
+                            item.ClassName == match.PlayerClassName) ||
+                           (!string.IsNullOrWhiteSpace(match.PlayerSpecLabel) &&
+                            item.Scope == "spec" &&
+                            item.SpecLabel == match.PlayerSpecLabel))
             .OrderByDescending(item => item.EvidenceCount)
             .ThenByDescending(item => item.UpdatedAt)
             .Take(24)
             .ToListAsync(cancellationToken);
         var coachSkills = await _dbContext.CoachSkills
             .Where(item => item.Scope == "global" ||
-                           (!string.IsNullOrWhiteSpace(match.PlayerSpecLabel) && item.SpecLabel == match.PlayerSpecLabel))
+                           (!string.IsNullOrWhiteSpace(match.PlayerClassName) &&
+                            item.Scope == "class" &&
+                            item.ClassName == match.PlayerClassName) ||
+                           (!string.IsNullOrWhiteSpace(match.PlayerSpecLabel) &&
+                            item.Scope == "spec" &&
+                            item.SpecLabel == match.PlayerSpecLabel))
             .OrderByDescending(item => item.EvidenceCount)
             .ThenByDescending(item => item.UpdatedAt)
             .Take(24)
@@ -103,6 +113,7 @@ public sealed class MatchLibraryService : IMatchLibraryService
             matchJson,
             promptText,
             manualAnalysisText,
+            BuildSpecPerformanceSnapshot(match),
             match.MetricSummary is null
                 ? null
                 : new MatchMetricSummaryItem(
@@ -120,13 +131,20 @@ public sealed class MatchLibraryService : IMatchLibraryService
                 .ThenBy(metric => metric.SpellName)
                 .Select(metric => new MatchSpellMetricItem(
                     metric.SpellName,
+                    metric.NormalizedSpellName,
                     metric.CastCount,
                     metric.TotalDamage,
-                    metric.TotalHealing))
+                    metric.TotalHealing,
+                    metric.ClassName,
+                    metric.SpecLabel,
+                    metric.PrimaryCategory,
+                    metric.TacticalPhase,
+                    metric.IsSignatureSpell))
                 .ToList(),
             knowledgeParameters
                 .Select(item => new CoachKnowledgeParameterItem(
                     item.Scope,
+                    item.ClassName,
                     item.SpecLabel,
                     item.Category,
                     item.Metric,
@@ -140,6 +158,7 @@ public sealed class MatchLibraryService : IMatchLibraryService
             coachSkills
                 .Select(item => new CoachSkillItem(
                     item.Scope,
+                    item.ClassName,
                     item.SpecLabel,
                     item.Area,
                     item.Goal,
@@ -256,6 +275,7 @@ public sealed class MatchLibraryService : IMatchLibraryService
             match.DurationSeconds,
             match.ResultForPlayer,
             match.PlayerName,
+            match.PlayerClassName,
             match.PlayerSpecLabel,
             !string.IsNullOrWhiteSpace(match.VideoLocalPath),
             match.HasManualAnalysis,
@@ -266,4 +286,31 @@ public sealed class MatchLibraryService : IMatchLibraryService
             match.RecordingStatus,
             match.VideoDurationSeconds,
             match.VideoResolution);
+
+    private static SpecPerformanceSnapshotItem? BuildSpecPerformanceSnapshot(MatchRecordEntity match)
+    {
+        if (match.SpellMetrics.Count == 0)
+        {
+            return null;
+        }
+
+        var recognized = match.SpellMetrics.Where(metric => !string.IsNullOrWhiteSpace(metric.ClassName)).ToList();
+        if (recognized.Count == 0)
+        {
+            return null;
+        }
+
+        return new SpecPerformanceSnapshotItem(
+            match.PlayerClassName,
+            match.PlayerSpecLabel,
+            recognized.Count,
+            recognized.Where(metric => metric.TacticalPhase == "core").Sum(metric => metric.CastCount),
+            recognized.Where(metric => metric.TacticalPhase is "burst" or "cooldowns").Sum(metric => metric.CastCount),
+            recognized.Where(metric => metric.TacticalPhase == "defensives" || metric.PrimaryCategory == "defensive").Sum(metric => metric.CastCount),
+            recognized.Where(metric => metric.TacticalPhase is "cc" or "utility" ||
+                                       metric.PrimaryCategory is "stun" or "fear" or "silence" or "disorient" or "incapacitate" or "horror" or "root" or "cc")
+                .Sum(metric => metric.CastCount),
+            recognized.Where(metric => metric.PrimaryCategory == "interrupt" || metric.TacticalPhase == "interrupts").Sum(metric => metric.CastCount),
+            recognized.Where(metric => metric.PrimaryCategory == "mobility" || metric.TacticalPhase == "mobility").Sum(metric => metric.CastCount));
+    }
 }

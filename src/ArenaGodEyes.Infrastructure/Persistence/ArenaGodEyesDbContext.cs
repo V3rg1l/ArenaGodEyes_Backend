@@ -41,6 +41,7 @@ public sealed class ArenaGodEyesDbContext : DbContext
             entity.Property(match => match.MatchType).HasMaxLength(32);
             entity.Property(match => match.MapName).HasMaxLength(128);
             entity.Property(match => match.PlayerName).HasMaxLength(128);
+            entity.Property(match => match.PlayerClassName).HasMaxLength(64);
             entity.Property(match => match.PlayerSpecLabel).HasMaxLength(128);
             entity.Property(match => match.ResultForPlayer).HasMaxLength(32);
             entity.Property(match => match.RecordingStatus).HasMaxLength(32);
@@ -123,8 +124,13 @@ public sealed class ArenaGodEyesDbContext : DbContext
         modelBuilder.Entity<MatchSpellMetricEntity>(entity =>
         {
             entity.HasKey(metric => metric.Id);
-            entity.HasIndex(metric => new { metric.MatchId, metric.SpellName });
+            entity.HasIndex(metric => new { metric.MatchId, metric.NormalizedSpellName });
             entity.Property(metric => metric.SpellName).HasMaxLength(256);
+            entity.Property(metric => metric.NormalizedSpellName).HasMaxLength(256);
+            entity.Property(metric => metric.ClassName).HasMaxLength(64);
+            entity.Property(metric => metric.SpecLabel).HasMaxLength(128);
+            entity.Property(metric => metric.PrimaryCategory).HasMaxLength(64);
+            entity.Property(metric => metric.TacticalPhase).HasMaxLength(64);
             entity.HasOne(metric => metric.Match)
                 .WithMany(match => match.SpellMetrics)
                 .HasForeignKey(metric => metric.MatchRecordEntityId)
@@ -134,8 +140,9 @@ public sealed class ArenaGodEyesDbContext : DbContext
         modelBuilder.Entity<CoachKnowledgeParameterEntity>(entity =>
         {
             entity.HasKey(parameter => parameter.Id);
-            entity.HasIndex(parameter => new { parameter.Scope, parameter.SpecLabel, parameter.Category, parameter.Metric }).IsUnique();
+            entity.HasIndex(parameter => new { parameter.Scope, parameter.ClassName, parameter.SpecLabel, parameter.Category, parameter.Metric }).IsUnique();
             entity.Property(parameter => parameter.Scope).HasMaxLength(32);
+            entity.Property(parameter => parameter.ClassName).HasMaxLength(64);
             entity.Property(parameter => parameter.SpecLabel).HasMaxLength(128);
             entity.Property(parameter => parameter.Category).HasMaxLength(64);
             entity.Property(parameter => parameter.Metric).HasMaxLength(128);
@@ -146,8 +153,9 @@ public sealed class ArenaGodEyesDbContext : DbContext
         modelBuilder.Entity<CoachSkillEntity>(entity =>
         {
             entity.HasKey(skill => skill.Id);
-            entity.HasIndex(skill => new { skill.Scope, skill.SpecLabel, skill.Area, skill.Goal }).IsUnique();
+            entity.HasIndex(skill => new { skill.Scope, skill.ClassName, skill.SpecLabel, skill.Area, skill.Goal }).IsUnique();
             entity.Property(skill => skill.Scope).HasMaxLength(32);
+            entity.Property(skill => skill.ClassName).HasMaxLength(64);
             entity.Property(skill => skill.SpecLabel).HasMaxLength(128);
             entity.Property(skill => skill.Area).HasMaxLength(128);
             entity.Property(skill => skill.Goal).HasMaxLength(256);

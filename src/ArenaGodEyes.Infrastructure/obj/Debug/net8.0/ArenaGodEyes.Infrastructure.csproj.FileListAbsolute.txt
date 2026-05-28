@@ -23,7 +23,6 @@ D:/DEV/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.Infrastructure/obj/Deb
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.Infrastructure/obj/Debug/net8.0/ArenaGodEyes.Infrastructure.AssemblyInfoInputs.cache
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.Infrastructure/obj/Debug/net8.0/ArenaGodEyes.Infrastructure.AssemblyInfo.cs
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.Infrastructure/obj/Debug/net8.0/ArenaGodEyes.Infrastructure.csproj.CoreCompileInputs.cache
-/Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.Infrastructure/obj/Debug/net8.0/ArenaGodEyes.Infrastructure.sourcelink.json
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.Infrastructure/obj/Debug/net8.0/ArenaGodEyes.Infrastructure.csproj.CopyComplete
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.Infrastructure/obj/Debug/net8.0/ArenaGodEyes.Infrastructure.dll
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.Infrastructure/obj/Debug/net8.0/refint/ArenaGodEyes.Infrastructure.dll

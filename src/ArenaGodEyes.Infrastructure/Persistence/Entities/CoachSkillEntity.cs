@@ -6,6 +6,8 @@ public sealed class CoachSkillEntity
 
     public string Scope { get; set; } = "spec";
 
+    public string? ClassName { get; set; }
+
     public string? SpecLabel { get; set; }
 
     public string Area { get; set; } = string.Empty;

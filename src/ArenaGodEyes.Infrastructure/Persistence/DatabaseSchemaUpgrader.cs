@@ -19,6 +19,7 @@ internal static class DatabaseSchemaUpgrader
         await EnsureColumnAsync(connection, "Matches", "VideoCodec", "TEXT", cancellationToken);
         await EnsureColumnAsync(connection, "Matches", "VideoResolution", "TEXT", cancellationToken);
         await EnsureColumnAsync(connection, "Matches", "LastVideoProcessedAt", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "Matches", "PlayerClassName", "TEXT", cancellationToken);
 
         await ExecuteNonQueryAsync(connection, """
             CREATE TABLE IF NOT EXISTS AnalysisInsights (
@@ -120,25 +121,38 @@ internal static class DatabaseSchemaUpgrader
                 Id INTEGER NOT NULL CONSTRAINT PK_MatchSpellMetrics PRIMARY KEY AUTOINCREMENT,
                 MatchId TEXT NOT NULL,
                 SpellName TEXT NOT NULL,
+                NormalizedSpellName TEXT NOT NULL DEFAULT '',
                 CastCount INTEGER NOT NULL,
                 TotalDamage INTEGER NOT NULL,
                 TotalHealing INTEGER NOT NULL,
+                ClassName TEXT NULL,
+                SpecLabel TEXT NULL,
+                PrimaryCategory TEXT NULL,
+                TacticalPhase TEXT NULL,
+                IsSignatureSpell INTEGER NOT NULL DEFAULT 0,
                 CreatedAt TEXT NOT NULL,
                 MatchRecordEntityId INTEGER NOT NULL,
                 CONSTRAINT FK_MatchSpellMetrics_Matches_MatchRecordEntityId
                     FOREIGN KEY (MatchRecordEntityId) REFERENCES Matches (Id) ON DELETE CASCADE
             );
             """, cancellationToken);
+        await EnsureColumnAsync(connection, "MatchSpellMetrics", "NormalizedSpellName", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "MatchSpellMetrics", "ClassName", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "MatchSpellMetrics", "SpecLabel", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "MatchSpellMetrics", "PrimaryCategory", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "MatchSpellMetrics", "TacticalPhase", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "MatchSpellMetrics", "IsSignatureSpell", "INTEGER", cancellationToken);
 
         await ExecuteNonQueryAsync(connection, """
-            CREATE INDEX IF NOT EXISTS IX_MatchSpellMetrics_MatchId_SpellName
-            ON MatchSpellMetrics (MatchId, SpellName);
+            CREATE INDEX IF NOT EXISTS IX_MatchSpellMetrics_MatchId_NormalizedSpellName
+            ON MatchSpellMetrics (MatchId, NormalizedSpellName);
             """, cancellationToken);
 
         await ExecuteNonQueryAsync(connection, """
             CREATE TABLE IF NOT EXISTS CoachKnowledgeParameters (
                 Id INTEGER NOT NULL CONSTRAINT PK_CoachKnowledgeParameters PRIMARY KEY AUTOINCREMENT,
                 Scope TEXT NOT NULL,
+                ClassName TEXT NULL,
                 SpecLabel TEXT NULL,
                 Category TEXT NOT NULL,
                 Metric TEXT NOT NULL,
@@ -151,16 +165,18 @@ internal static class DatabaseSchemaUpgrader
                 UpdatedAt TEXT NOT NULL
             );
             """, cancellationToken);
+        await EnsureColumnAsync(connection, "CoachKnowledgeParameters", "ClassName", "TEXT", cancellationToken);
 
         await ExecuteNonQueryAsync(connection, """
-            CREATE UNIQUE INDEX IF NOT EXISTS IX_CoachKnowledgeParameters_Scope_SpecLabel_Category_Metric
-            ON CoachKnowledgeParameters (Scope, SpecLabel, Category, Metric);
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_CoachKnowledgeParameters_Scope_ClassName_SpecLabel_Category_Metric
+            ON CoachKnowledgeParameters (Scope, ClassName, SpecLabel, Category, Metric);
             """, cancellationToken);
 
         await ExecuteNonQueryAsync(connection, """
             CREATE TABLE IF NOT EXISTS CoachSkills (
                 Id INTEGER NOT NULL CONSTRAINT PK_CoachSkills PRIMARY KEY AUTOINCREMENT,
                 Scope TEXT NOT NULL,
+                ClassName TEXT NULL,
                 SpecLabel TEXT NULL,
                 Area TEXT NOT NULL,
                 Goal TEXT NOT NULL,
@@ -171,10 +187,11 @@ internal static class DatabaseSchemaUpgrader
                 UpdatedAt TEXT NOT NULL
             );
             """, cancellationToken);
+        await EnsureColumnAsync(connection, "CoachSkills", "ClassName", "TEXT", cancellationToken);
 
         await ExecuteNonQueryAsync(connection, """
-            CREATE UNIQUE INDEX IF NOT EXISTS IX_CoachSkills_Scope_SpecLabel_Area_Goal
-            ON CoachSkills (Scope, SpecLabel, Area, Goal);
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_CoachSkills_Scope_ClassName_SpecLabel_Area_Goal
+            ON CoachSkills (Scope, ClassName, SpecLabel, Area, Goal);
             """, cancellationToken);
     }
 

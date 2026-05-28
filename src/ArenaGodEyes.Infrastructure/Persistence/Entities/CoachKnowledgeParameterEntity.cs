@@ -6,6 +6,8 @@ public sealed class CoachKnowledgeParameterEntity
 
     public string Scope { get; set; } = "spec";
 
+    public string? ClassName { get; set; }
+
     public string? SpecLabel { get; set; }
 
     public string Category { get; set; } = string.Empty;

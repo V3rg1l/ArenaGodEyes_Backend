@@ -45,6 +45,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICombatLogEventSink, ArenaLiveMatchAutomationSink>();
         services.AddSingleton<IMatchLogWatcher, MatchLogWatcher>();
         services.AddSingleton<ICombatLogImportService, CombatLogImportService>();
+        services.AddSingleton<WowKnowledgeService>();
         services.AddScoped<IMatchImportOrchestrator, MatchImportOrchestrator>();
         services.AddScoped<IMatchLibraryService, MatchLibraryService>();
         services.AddScoped<IManualAnalysisWorkflowService, ManualAnalysisWorkflowService>();

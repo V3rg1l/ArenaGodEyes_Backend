@@ -5,6 +5,7 @@ public sealed record MatchReviewDetails(
     string MatchJson,
     string? PromptText,
     string? ManualAnalysisText,
+    SpecPerformanceSnapshotItem? SpecPerformanceSnapshot,
     MatchMetricSummaryItem? MetricSummary,
     IReadOnlyList<MatchSpellMetricItem> SpellMetrics,
     IReadOnlyList<CoachKnowledgeParameterItem> CoachKnowledgeParameters,

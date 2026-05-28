@@ -26,6 +26,8 @@ public sealed class MatchRecordEntity
 
     public string? PlayerName { get; set; }
 
+    public string? PlayerClassName { get; set; }
+
     public string? PlayerSpecLabel { get; set; }
 
     public string? ResultForPlayer { get; set; }

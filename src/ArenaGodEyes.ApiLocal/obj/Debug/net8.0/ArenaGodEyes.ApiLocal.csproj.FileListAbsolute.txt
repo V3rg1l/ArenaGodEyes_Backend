@@ -120,7 +120,6 @@ D:/DEV/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.ApiLocal/bin/Debug/net
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.ApiLocal/obj/Debug/net8.0/ArenaGodEyes.ApiLocal.AssemblyInfo.cs
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.ApiLocal/obj/Debug/net8.0/ArenaGodEyes.ApiLocal.csproj.CoreCompileInputs.cache
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.ApiLocal/obj/Debug/net8.0/ArenaGodEyes.ApiLocal.MvcApplicationPartsAssemblyInfo.cache
-/Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.ApiLocal/obj/Debug/net8.0/ArenaGodEyes.ApiLocal.sourcelink.json
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.ApiLocal/obj/Debug/net8.0/staticwebassets.build.json
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.ApiLocal/obj/Debug/net8.0/staticwebassets.development.json
 /Users/daniloantonietto/Documents/Projetos/ArenaGodEyes/ArenaGodEyes.Backend/src/ArenaGodEyes.ApiLocal/obj/Debug/net8.0/staticwebassets/msbuild.ArenaGodEyes.ApiLocal.Microsoft.AspNetCore.StaticWebAssets.props

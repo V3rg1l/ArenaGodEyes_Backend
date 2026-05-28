@@ -2,6 +2,7 @@ namespace ArenaGodEyes.Core.Application.Matches.Models;
 
 public sealed record CoachKnowledgeParameterItem(
     string Scope,
+    string? ClassName,
     string? SpecLabel,
     string Category,
     string Metric,
