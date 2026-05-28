@@ -55,6 +55,14 @@ public static class SettingsEndpoints
             return Results.Ok(status);
         });
 
+        endpoints.MapGet("/api/settings/storage-overview", async (
+            IStorageOverviewService storageOverviewService,
+            CancellationToken cancellationToken) =>
+        {
+            var overview = await storageOverviewService.GetAsync(cancellationToken);
+            return Results.Ok(overview);
+        });
+
         endpoints.MapGet("/api/settings/addon-status", async (
             IAppSettingsService settingsService,
             IAddonStatusService addonStatusService,

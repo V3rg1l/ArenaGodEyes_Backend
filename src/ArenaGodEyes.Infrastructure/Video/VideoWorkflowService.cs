@@ -21,19 +21,22 @@ public sealed class VideoWorkflowService : IVideoWorkflowService
     private readonly LocalDataPaths _localDataPaths;
     private readonly ILogger<VideoWorkflowService> _logger;
     private readonly IMatchLibraryService _matchLibraryService;
+    private readonly ObsLocalConfigurationReader _obsLocalConfigurationReader;
 
     public VideoWorkflowService(
         ArenaGodEyesDbContext dbContext,
         IAppSettingsService appSettingsService,
         LocalDataPaths localDataPaths,
         ILogger<VideoWorkflowService> logger,
-        IMatchLibraryService matchLibraryService)
+        IMatchLibraryService matchLibraryService,
+        ObsLocalConfigurationReader obsLocalConfigurationReader)
     {
         _dbContext = dbContext;
         _appSettingsService = appSettingsService;
         _localDataPaths = localDataPaths;
         _logger = logger;
         _matchLibraryService = matchLibraryService;
+        _obsLocalConfigurationReader = obsLocalConfigurationReader;
     }
 
     public async Task<ObsConnectionStatus> GetObsStatusAsync(CancellationToken cancellationToken = default)
@@ -62,12 +65,88 @@ public sealed class VideoWorkflowService : IVideoWorkflowService
         catch (Exception exception)
         {
             _logger.LogWarning(exception, "Failed to query OBS status.");
-            return new ObsConnectionStatus(true, false, false, false, null, null, exception.Message);
+            return new ObsConnectionStatus(true, false, false, false, null, null, BuildObsStatusErrorMessage(exception));
         }
     }
 
     public Task<ObsConnectionStatus> TestObsConnectionAsync(CancellationToken cancellationToken = default) =>
         GetObsStatusAsync(cancellationToken);
+
+    public async Task<ObsSceneSetupResult> EnsureWowSceneAsync(
+        string windowTitle,
+        string executableName,
+        string? windowClassName,
+        string captureMode,
+        bool captureCursor,
+        string? sceneName,
+        string? sourceName,
+        CancellationToken cancellationToken = default)
+    {
+        var settings = await _appSettingsService.GetAsync(cancellationToken);
+        if (!IsObsConfigured(settings))
+        {
+            return new ObsSceneSetupResult(false, false, null, null, null, "OBS is not configured.");
+        }
+
+        var resolvedSceneName = string.IsNullOrWhiteSpace(sceneName) ? "ArenaGodEyes Scene" : sceneName.Trim();
+        var resolvedSourceName = string.IsNullOrWhiteSpace(sourceName) ? "ArenaGodEyes WoW Capture" : sourceName.Trim();
+
+        try
+        {
+            await using var session = await ObsWebSocketSession.ConnectAsync(settings, cancellationToken);
+            await EnsureSceneExistsAsync(session, resolvedSceneName, cancellationToken);
+
+            var windowDescriptor = BuildObsWindowDescriptor(windowTitle, windowClassName, executableName);
+            var inputKind = ResolveObsInputKind(captureMode);
+            var inputSettings = BuildObsInputSettings(inputKind, windowDescriptor, captureCursor);
+
+            var inputNames = await GetInputNamesAsync(session, cancellationToken);
+            if (inputNames.Contains(resolvedSourceName, StringComparer.OrdinalIgnoreCase))
+            {
+                await session.RequestAsync("SetInputSettings", new
+                {
+                    inputName = resolvedSourceName,
+                    inputSettings,
+                    overlay = true
+                }, cancellationToken);
+            }
+            else
+            {
+                await session.RequestAsync("CreateInput", new
+                {
+                    sceneName = resolvedSceneName,
+                    inputName = resolvedSourceName,
+                    inputKind,
+                    inputSettings,
+                    sceneItemEnabled = true
+                }, cancellationToken);
+            }
+
+            await session.RequestAsync("SetCurrentProgramScene", new
+            {
+                sceneName = resolvedSceneName
+            }, cancellationToken);
+
+            return new ObsSceneSetupResult(
+                true,
+                true,
+                resolvedSceneName,
+                resolvedSourceName,
+                windowDescriptor,
+                null);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Failed to ensure OBS WoW scene.");
+            return new ObsSceneSetupResult(
+                false,
+                false,
+                resolvedSceneName,
+                resolvedSourceName,
+                null,
+                exception.Message);
+        }
+    }
 
     public async Task<ObsRecordingStartResult> StartRecordingAsync(string? matchId, CancellationToken cancellationToken = default)
     {
@@ -324,6 +403,95 @@ public sealed class VideoWorkflowService : IVideoWorkflowService
 
     private static bool IsObsConfigured(Core.Application.Settings.Models.AppSettings settings) =>
         !string.IsNullOrWhiteSpace(settings.ObsHost) && settings.ObsPort > 0;
+
+    private string BuildObsStatusErrorMessage(Exception exception)
+    {
+        var localConfiguration = _obsLocalConfigurationReader.Read();
+        if (localConfiguration.Exists && !localConfiguration.ServerEnabled)
+        {
+            return "OBS WebSocket server is disabled in the local OBS config. Enable it in OBS WebSocket settings.";
+        }
+
+        return exception.Message;
+    }
+
+    private static string ResolveObsInputKind(string captureMode) =>
+        captureMode.Trim().ToLowerInvariant() switch
+        {
+            "game" => "game_capture",
+            "monitor" => "monitor_capture",
+            _ => "window_capture"
+        };
+
+    private static object BuildObsInputSettings(string inputKind, string windowDescriptor, bool captureCursor)
+    {
+        if (string.Equals(inputKind, "game_capture", StringComparison.Ordinal))
+        {
+            return new
+            {
+                capture_mode = "window",
+                window = windowDescriptor,
+                capture_cursor = captureCursor
+            };
+        }
+
+        if (string.Equals(inputKind, "monitor_capture", StringComparison.Ordinal))
+        {
+            return new
+            {
+                capture_cursor = captureCursor
+            };
+        }
+
+        return new
+        {
+            window = windowDescriptor,
+            cursor = captureCursor
+        };
+    }
+
+    private static string BuildObsWindowDescriptor(string windowTitle, string? windowClassName, string executableName)
+    {
+        var safeTitle = string.IsNullOrWhiteSpace(windowTitle) ? "World of Warcraft" : windowTitle.Trim();
+        var safeClass = string.IsNullOrWhiteSpace(windowClassName) ? "GxWindowClass" : windowClassName.Trim();
+        var safeExecutable = string.IsNullOrWhiteSpace(executableName) ? "Wow.exe" : executableName.Trim();
+        return $"{safeTitle}:{safeClass}:{safeExecutable}";
+    }
+
+    private static async Task EnsureSceneExistsAsync(
+        ObsWebSocketSession session,
+        string sceneName,
+        CancellationToken cancellationToken)
+    {
+        var sceneListData = await session.RequestAsync("GetSceneList", null, cancellationToken);
+        var sceneNames = sceneListData?["scenes"]?.AsArray()
+            .Select(item => item?["sceneName"]?.GetValue<string>())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .ToList()
+            ?? [];
+
+        if (!sceneNames.Contains(sceneName, StringComparer.OrdinalIgnoreCase))
+        {
+            await session.RequestAsync("CreateScene", new
+            {
+                sceneName
+            }, cancellationToken);
+        }
+    }
+
+    private static async Task<List<string>> GetInputNamesAsync(
+        ObsWebSocketSession session,
+        CancellationToken cancellationToken)
+    {
+        var inputListData = await session.RequestAsync("GetInputList", null, cancellationToken);
+        return inputListData?["inputs"]?.AsArray()
+            .Select(item => item?["inputName"]?.GetValue<string>())
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .ToList()
+            ?? [];
+    }
 
     private static List<ClipTarget> BuildClipTargets(Persistence.Entities.MatchRecordEntity match)
     {

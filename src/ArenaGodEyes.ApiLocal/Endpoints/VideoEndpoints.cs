@@ -23,6 +23,23 @@ public static class VideoEndpoints
             return Results.Ok(result);
         });
 
+        endpoints.MapPost("/api/video/obs/ensure-wow-scene", async (
+            ObsEnsureWowSceneRequest request,
+            IVideoWorkflowService videoWorkflowService,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await videoWorkflowService.EnsureWowSceneAsync(
+                request.WindowTitle,
+                request.ExecutableName,
+                request.WindowClassName,
+                request.CaptureMode,
+                request.CaptureCursor,
+                request.SceneName,
+                request.SourceName,
+                cancellationToken);
+            return Results.Ok(result);
+        });
+
         endpoints.MapPost("/api/video/obs/start-recording", async (
             ObsStartRecordingRequest request,
             IVideoWorkflowService videoWorkflowService,

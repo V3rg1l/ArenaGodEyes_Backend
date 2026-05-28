@@ -28,6 +28,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(new LocalDataPaths(workspacePaths.WorkspaceRootPath));
         services.AddSingleton<IFileSystem, PhysicalFileSystem>();
         services.AddSingleton<IUtcNowProvider, SystemUtcNowProvider>();
+        services.AddSingleton<ObsLocalConfigurationReader>();
         services.AddSingleton(new MatchLogWatcherOptions());
         services.AddDbContext<ArenaGodEyesDbContext>((serviceProvider, options) =>
         {
@@ -36,6 +37,8 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton<IAppSettingsRepository, AppSettingsRepository>();
         services.AddSingleton<IAppSettingsService, AppSettingsService>();
+        services.AddSingleton<IFirstRunBootstrapService, FirstRunBootstrapService>();
+        services.AddSingleton<IStorageOverviewService, StorageOverviewService>();
         services.AddSingleton<IWowInstallationDetector, WowInstallationDetector>();
         services.AddSingleton<IAddonStatusService, AddonStatusService>();
         services.AddSingleton<IAddonInstallerService, AddonInstallerService>();
@@ -46,6 +49,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMatchLogWatcher, MatchLogWatcher>();
         services.AddSingleton<ICombatLogImportService, CombatLogImportService>();
         services.AddSingleton<WowKnowledgeService>();
+        services.AddScoped<MatchAnalysisContextService>();
         services.AddScoped<IMatchImportOrchestrator, MatchImportOrchestrator>();
         services.AddScoped<IMatchLibraryService, MatchLibraryService>();
         services.AddScoped<IManualAnalysisWorkflowService, ManualAnalysisWorkflowService>();

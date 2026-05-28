@@ -128,7 +128,7 @@ public sealed class ArenaLiveMatchAutomationSink : ICombatLogEventSink
             isRanked,
             shouldTrack);
 
-        if (!shouldTrack || !settings.EnableObsRecording)
+        if (!shouldTrack || !settings.EnableRecording || !settings.EnableObsRecording)
         {
             return;
         }

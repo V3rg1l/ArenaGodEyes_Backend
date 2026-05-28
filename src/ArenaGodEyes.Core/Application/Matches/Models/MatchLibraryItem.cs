@@ -18,4 +18,5 @@ public sealed record MatchLibraryItem(
     string? ThumbnailPath,
     string? RecordingStatus,
     double? VideoDurationSeconds,
-    string? VideoResolution);
+    string? VideoResolution,
+    IReadOnlyList<MatchParticipantSummaryItem> Participants);

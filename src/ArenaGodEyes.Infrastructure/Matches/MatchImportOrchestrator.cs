@@ -71,6 +71,7 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
         string sourceFilePath,
         CancellationToken cancellationToken)
     {
+        candidate.ApplyInferredPlayerProfiles(_wowKnowledgeService);
         var matchId = BuildMatchId(candidate);
         var chunkPath = Path.Combine(_localDataPaths.ChunksPath, $"{matchId}.txt");
         var jsonPath = Path.Combine(_localDataPaths.MatchesPath, $"{matchId}.json");
@@ -357,6 +358,39 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
             }
         }
 
+        public void ApplyInferredPlayerProfiles(WowKnowledgeService wowKnowledgeService)
+        {
+            var structured = MatchMetricsCalculator.CalculateStructured(Lines, StartedAt, DurationSeconds);
+
+            foreach (var combatant in _combatants)
+            {
+                if (!structured.PlayerSpellNamesBySourceGuid.TryGetValue(combatant.Guid, out var spellNames) || spellNames.Count == 0)
+                {
+                    continue;
+                }
+
+                var inferred = wowKnowledgeService.InferPlayerProfile(spellNames, combatant.SpecLabel);
+                if (!string.IsNullOrWhiteSpace(inferred.ClassName))
+                {
+                    combatant.ClassName = inferred.ClassName;
+                }
+
+                if (!string.IsNullOrWhiteSpace(inferred.SpecLabel))
+                {
+                    combatant.SpecLabel = inferred.SpecLabel;
+                }
+
+                combatant.ProfileSnapshot = inferred.Snapshot;
+            }
+
+            var trackedPlayer = _combatants.FirstOrDefault(item => string.Equals(item.Guid, PlayerGuid, StringComparison.OrdinalIgnoreCase));
+            if (trackedPlayer is not null)
+            {
+                PlayerClassName = trackedPlayer.ClassName;
+                PlayerSpecLabel = trackedPlayer.SpecLabel;
+            }
+        }
+
         public object BuildJsonMatchObject()
         {
             var playerObjects = _combatants.Select(combatant => new
@@ -371,7 +405,21 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
                 specId = combatant.SpecId,
                 specLabel = combatant.SpecLabel,
                 personalRating = combatant.PersonalRating,
-                highestPvpTier = combatant.HighestPvpTier
+                highestPvpTier = combatant.HighestPvpTier,
+                profileSnapshot = combatant.ProfileSnapshot is null
+                    ? null
+                    : new
+                    {
+                        className = combatant.ProfileSnapshot.ClassName,
+                        specLabel = combatant.ProfileSnapshot.SpecLabel,
+                        recognizedSpellCount = combatant.ProfileSnapshot.RecognizedSpellCount,
+                        coreSpellUsageCount = combatant.ProfileSnapshot.CoreSpellUsageCount,
+                        burstSpellUsageCount = combatant.ProfileSnapshot.BurstSpellUsageCount,
+                        defensiveSpellUsageCount = combatant.ProfileSnapshot.DefensiveSpellUsageCount,
+                        controlSpellUsageCount = combatant.ProfileSnapshot.ControlSpellUsageCount,
+                        interruptSpellUsageCount = combatant.ProfileSnapshot.InterruptSpellUsageCount,
+                        mobilitySpellUsageCount = combatant.ProfileSnapshot.MobilitySpellUsageCount
+                    }
             }).ToList();
 
             var metrics = MatchMetricsCalculator.Calculate(Lines, StartedAt);
@@ -495,6 +543,8 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
         public string SpecLabel { get; set; } = "Unknown Spec";
 
         public int TeamId { get; set; }
+
+        public SpecPerformanceSnapshotItem? ProfileSnapshot { get; set; }
 
         public string GetDisplayName()
         {

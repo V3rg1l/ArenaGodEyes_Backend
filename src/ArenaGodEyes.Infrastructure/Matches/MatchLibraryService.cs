@@ -5,16 +5,19 @@ using ArenaGodEyes.Infrastructure.Persistence;
 using ArenaGodEyes.Infrastructure.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
+using System.Text.Json.Nodes;
 
 namespace ArenaGodEyes.Infrastructure.Matches;
 
 public sealed class MatchLibraryService : IMatchLibraryService
 {
     private readonly ArenaGodEyesDbContext _dbContext;
+    private readonly MatchAnalysisContextService _matchAnalysisContextService;
 
-    public MatchLibraryService(ArenaGodEyesDbContext dbContext)
+    public MatchLibraryService(ArenaGodEyesDbContext dbContext, MatchAnalysisContextService matchAnalysisContextService)
     {
         _dbContext = dbContext;
+        _matchAnalysisContextService = matchAnalysisContextService;
     }
 
     public async Task<bool> AttachVideoAsync(string matchId, string videoPath, CancellationToken cancellationToken = default)
@@ -84,7 +87,7 @@ public sealed class MatchLibraryService : IMatchLibraryService
             .Select(item => item.ResponseText)
             .FirstOrDefault();
 
-        var knowledgeParameters = await _dbContext.CoachKnowledgeParameters
+        var knowledgeParameters = (await _dbContext.CoachKnowledgeParameters
             .Where(item => item.Scope == "global" ||
                            (!string.IsNullOrWhiteSpace(match.PlayerClassName) &&
                             item.Scope == "class" &&
@@ -93,10 +96,12 @@ public sealed class MatchLibraryService : IMatchLibraryService
                             item.Scope == "spec" &&
                             item.SpecLabel == match.PlayerSpecLabel))
             .OrderByDescending(item => item.EvidenceCount)
+            .ToListAsync(cancellationToken))
+            .OrderByDescending(item => item.EvidenceCount)
             .ThenByDescending(item => item.UpdatedAt)
             .Take(24)
-            .ToListAsync(cancellationToken);
-        var coachSkills = await _dbContext.CoachSkills
+            .ToList();
+        var coachSkills = (await _dbContext.CoachSkills
             .Where(item => item.Scope == "global" ||
                            (!string.IsNullOrWhiteSpace(match.PlayerClassName) &&
                             item.Scope == "class" &&
@@ -105,15 +110,27 @@ public sealed class MatchLibraryService : IMatchLibraryService
                             item.Scope == "spec" &&
                             item.SpecLabel == match.PlayerSpecLabel))
             .OrderByDescending(item => item.EvidenceCount)
+            .ToListAsync(cancellationToken))
+            .OrderByDescending(item => item.EvidenceCount)
             .ThenByDescending(item => item.UpdatedAt)
             .Take(24)
-            .ToListAsync(cancellationToken);
+            .ToList();
+        var participants = await _matchAnalysisContextService.BuildParticipantReviewItemsAsync(match, matchJson, cancellationToken);
         var specPerformanceSnapshot = BuildSpecPerformanceSnapshot(match);
         var benchmarkComparisons = BuildBenchmarkComparisons(match, knowledgeParameters, specPerformanceSnapshot);
         var ruleCoachFindings = BuildRuleCoachFindings(match, benchmarkComparisons, coachSkills, specPerformanceSnapshot);
 
         var details = new MatchReviewDetails(
-            ToLibraryItem(match),
+            ToLibraryItem(
+                match,
+                participants
+                    .Select(item => new MatchParticipantSummaryItem(
+                        item.Name,
+                        item.TeamId,
+                        item.ClassName,
+                        item.SpecLabel,
+                        item.IsTrackedPlayer))
+                    .ToList()),
             matchJson,
             promptText,
             manualAnalysisText,
@@ -221,7 +238,8 @@ public sealed class MatchLibraryService : IMatchLibraryService
                     clip.Source,
                     clip.ClipPath,
                     clip.CreatedAt))
-                .ToList());
+                .ToList(),
+            participants);
 
         return details;
     }
@@ -232,9 +250,15 @@ public sealed class MatchLibraryService : IMatchLibraryService
             .Include(item => item.TimelineMarkers)
             .ToListAsync(cancellationToken);
 
+        var participantMap = await BuildParticipantSummaryMapAsync(matches, cancellationToken);
+
         return matches
             .OrderByDescending(item => item.StartedAt.UtcDateTime)
-            .Select(ToLibraryItem)
+            .Select(item => ToLibraryItem(
+                item,
+                participantMap.TryGetValue(item.MatchId, out var participants)
+                    ? participants
+                    : []))
             .ToList();
     }
 
@@ -272,7 +296,9 @@ public sealed class MatchLibraryService : IMatchLibraryService
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private static MatchLibraryItem ToLibraryItem(MatchRecordEntity match) =>
+    private static MatchLibraryItem ToLibraryItem(
+        MatchRecordEntity match,
+        IReadOnlyList<MatchParticipantSummaryItem> participants) =>
         new(
             match.MatchId,
             match.StartedAt,
@@ -291,7 +317,58 @@ public sealed class MatchLibraryService : IMatchLibraryService
             match.ThumbnailPath,
             match.RecordingStatus,
             match.VideoDurationSeconds,
-            match.VideoResolution);
+            match.VideoResolution,
+            participants);
+
+    private async Task<Dictionary<string, IReadOnlyList<MatchParticipantSummaryItem>>> BuildParticipantSummaryMapAsync(
+        IReadOnlyList<MatchRecordEntity> matches,
+        CancellationToken cancellationToken)
+    {
+        var map = new Dictionary<string, IReadOnlyList<MatchParticipantSummaryItem>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var match in matches)
+        {
+            if (string.IsNullOrWhiteSpace(match.MatchJsonPath) || !File.Exists(match.MatchJsonPath))
+            {
+                map[match.MatchId] = [];
+                continue;
+            }
+
+            var matchJson = await File.ReadAllTextAsync(match.MatchJsonPath, cancellationToken);
+            map[match.MatchId] = ParseParticipantSummaries(matchJson, match);
+        }
+
+        return map;
+    }
+
+    private static IReadOnlyList<MatchParticipantSummaryItem> ParseParticipantSummaries(
+        string matchJson,
+        MatchRecordEntity match)
+    {
+        var players = JsonNode.Parse(matchJson)?["players"]?.AsArray();
+        if (players is null)
+        {
+            return [];
+        }
+
+        return players
+            .OfType<JsonObject>()
+            .Select(player => new MatchParticipantSummaryItem(
+                player["name"]?.GetValue<string>() ?? "Unknown",
+                player["teamId"]?.GetValue<int?>() ?? -1,
+                NormalizeUnknown(player["className"]?.GetValue<string>()),
+                NormalizeUnknown(player["specLabel"]?.GetValue<string>()),
+                string.Equals(player["guid"]?.GetValue<string>(), match.PlayerGuid, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(item => item.TeamId)
+            .ThenByDescending(item => item.IsTrackedPlayer)
+            .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string? NormalizeUnknown(string? value) =>
+        string.IsNullOrWhiteSpace(value) || string.Equals(value, "Unknown Spec", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : value;
 
     private static SpecPerformanceSnapshotItem? BuildSpecPerformanceSnapshot(MatchRecordEntity match)
     {

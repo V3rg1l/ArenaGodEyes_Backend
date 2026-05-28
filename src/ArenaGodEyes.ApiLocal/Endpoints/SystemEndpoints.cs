@@ -1,5 +1,6 @@
 using ArenaGodEyes.ApiLocal.Contracts;
 using ArenaGodEyes.Core.Application.Abstractions.Time;
+using ArenaGodEyes.Core.Application.Settings.Abstractions;
 using ArenaGodEyes.Core.Domain.Product;
 using ArenaGodEyes.Core.Domain.Safety;
 
@@ -18,6 +19,14 @@ public static class SystemEndpoints
                 "ready",
                 SafetyBoundary.Summary,
                 utcNowProvider.UtcNow));
+        });
+
+        endpoints.MapGet("/api/system/bootstrap-status", async (
+            IFirstRunBootstrapService firstRunBootstrapService,
+            CancellationToken cancellationToken) =>
+        {
+            var status = await firstRunBootstrapService.GetStatusAsync(cancellationToken);
+            return Results.Ok(status);
         });
 
         endpoints.MapGet("/", () => Results.Redirect("/api/system/status"));

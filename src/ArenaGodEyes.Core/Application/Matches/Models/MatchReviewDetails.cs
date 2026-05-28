@@ -15,4 +15,5 @@ public sealed record MatchReviewDetails(
     IReadOnlyList<TimelineMarkerItem> TimelineMarkers,
     IReadOnlyList<AnalysisInsightItem> Insights,
     IReadOnlyList<ValidationTargetItem> ValidationTargets,
-    IReadOnlyList<VideoClipItem> VideoClips);
+    IReadOnlyList<VideoClipItem> VideoClips,
+    IReadOnlyList<MatchParticipantReviewItem> Participants);

@@ -13,11 +13,16 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
 {
     private readonly ArenaGodEyesDbContext _dbContext;
     private readonly LocalDataPaths _localDataPaths;
+    private readonly MatchAnalysisContextService _matchAnalysisContextService;
 
-    public ManualAnalysisWorkflowService(ArenaGodEyesDbContext dbContext, LocalDataPaths localDataPaths)
+    public ManualAnalysisWorkflowService(
+        ArenaGodEyesDbContext dbContext,
+        LocalDataPaths localDataPaths,
+        MatchAnalysisContextService matchAnalysisContextService)
     {
         _dbContext = dbContext;
         _localDataPaths = localDataPaths;
+        _matchAnalysisContextService = matchAnalysisContextService;
     }
 
     public async Task<ChatGptPromptExport?> ExportPromptAsync(string matchId, CancellationToken cancellationToken = default)
@@ -29,7 +34,8 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
         }
 
         var matchJson = await File.ReadAllTextAsync(match.MatchJsonPath, cancellationToken);
-        var promptText = BuildPrompt(match, matchJson);
+        var participants = await _matchAnalysisContextService.BuildParticipantReviewItemsAsync(match, matchJson, cancellationToken);
+        var promptText = BuildPrompt(match, matchJson, participants);
         var promptPath = Path.Combine(_localDataPaths.PromptsPath, $"{matchId}_chatgpt_prompt.md");
         await File.WriteAllTextAsync(promptPath, promptText, cancellationToken);
 
@@ -305,7 +311,10 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
         existing.UpdatedAt = now;
     }
 
-    private static string BuildPrompt(MatchRecordEntity match, string matchJson)
+    private static string BuildPrompt(
+        MatchRecordEntity match,
+        string matchJson,
+        IReadOnlyList<MatchParticipantReviewItem> participants)
     {
         var builder = new StringBuilder();
         builder.AppendLine("# ArenaGodEyes Manual ChatGPT Review");
@@ -319,6 +328,7 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
         builder.AppendLine("- timelineMarkers");
         builder.AppendLine("- trainingFocus");
         builder.AppendLine("- validationTargets");
+        builder.AppendLine("- participantFindings");
         builder.AppendLine();
         builder.AppendLine("Rules:");
         builder.AppendLine("- Use only the provided JSON and data.");
@@ -328,12 +338,70 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
         builder.AppendLine("- Use timestamps whenever possible.");
         builder.AppendLine("- If you provide timestamps, also provide `videoSecond` when possible.");
         builder.AppendLine("- Focus on things that can be validated again during video review.");
+        builder.AppendLine("- Prefer coaching language that explains both the mistake and the replacement pattern.");
         builder.AppendLine();
         builder.AppendLine($"MatchId: {match.MatchId}");
         builder.AppendLine($"Bracket: {match.Bracket}");
         builder.AppendLine($"Map: {match.MapName}");
         builder.AppendLine($"DurationSeconds: {match.DurationSeconds}");
         builder.AppendLine();
+        builder.AppendLine("Analysis scope:");
+        builder.AppendLine("- Default to the tracked player for direct coaching.");
+        builder.AppendLine("- Also use the other participants to understand peels, pressure, rotation, mitigation, defensive trades, setup quality, and missed punish windows.");
+        builder.AppendLine("- When evidence is strong, mention both the player's mistake and the enemy or teammate action that created the moment.");
+        builder.AppendLine();
+        builder.AppendLine("Coaching priorities:");
+        builder.AppendLine("- Rotation efficiency: uptime, filler misuse, burst sequencing, proc conversion, and wasted globals.");
+        builder.AppendLine("- Positioning and movement: line-of-sight, pillar usage, overextension, chase discipline, and mobility trade value.");
+        builder.AppendLine("- Damage mitigation: pre-wall vs panic wall, overlapping defensives, immunities, externals, and healer relief timing.");
+        builder.AppendLine("- Control and peels: cross-cc, interrupt timing, stop chains, peel quality, and teammate save windows.");
+        builder.AppendLine("- Win conditions: setup quality, target swaps, kill window creation, punish windows, and defensive baiting.");
+        builder.AppendLine("- Team context: use every participant's class/spec toolkit when explaining what should have happened.");
+        builder.AppendLine();
+        builder.AppendLine("If the evidence allows it, explicitly call out:");
+        builder.AppendLine("- missed defensives");
+        builder.AppendLine("- bad burst sync");
+        builder.AppendLine("- poor movement or positioning");
+        builder.AppendLine("- weak peel support");
+        builder.AppendLine("- low pressure conversion after enemy cooldowns");
+        builder.AppendLine("- good trades and setups worth repeating");
+        builder.AppendLine();
+        builder.AppendLine("## Participant Coach Context");
+        foreach (var participant in participants)
+        {
+            builder.AppendLine($"### {(participant.IsTrackedPlayer ? "[Tracked Player] " : string.Empty)}{participant.Name}");
+            builder.AppendLine($"- TeamId: {participant.TeamId}");
+            builder.AppendLine($"- Class/Spec: {participant.ClassName ?? "Unknown Class"} / {participant.SpecLabel ?? "Unknown Spec"}");
+            builder.AppendLine($"- Rating: {participant.PersonalRating}");
+            if (participant.ProfileSnapshot is not null)
+            {
+                builder.AppendLine(
+                    $"- Profile snapshot: core={participant.ProfileSnapshot.CoreSpellUsageCount}, burst={participant.ProfileSnapshot.BurstSpellUsageCount}, defensive={participant.ProfileSnapshot.DefensiveSpellUsageCount}, control={participant.ProfileSnapshot.ControlSpellUsageCount}, interrupt={participant.ProfileSnapshot.InterruptSpellUsageCount}, mobility={participant.ProfileSnapshot.MobilitySpellUsageCount}");
+            }
+
+            if (participant.CoachKnowledgeParameters.Count > 0)
+            {
+                builder.AppendLine("- coachKnowledgeParameters:");
+                foreach (var parameter in participant.CoachKnowledgeParameters.Take(8))
+                {
+                    builder.AppendLine(
+                        $"  - [{parameter.Scope}] {parameter.Category} / {parameter.Metric} => target={parameter.TargetValue ?? "n/a"} {parameter.Unit ?? string.Empty} note={parameter.Note ?? "n/a"} evidence={parameter.EvidenceCount}");
+                }
+            }
+
+            if (participant.CoachSkills.Count > 0)
+            {
+                builder.AppendLine("- coachSkills:");
+                foreach (var skill in participant.CoachSkills.Take(8))
+                {
+                    builder.AppendLine(
+                        $"  - [{skill.Scope}] {skill.Area} => goal={skill.Goal} drill={skill.Drill ?? "n/a"} evidence={skill.EvidenceCount}");
+                }
+            }
+
+            builder.AppendLine();
+        }
+
         builder.AppendLine("JSON schema example:");
         builder.AppendLine("```json");
         builder.AppendLine("""
@@ -373,6 +441,7 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
   ],
   "trainingFocus": [
     {
+      "participant": "Tracked Player",
       "area": "defensive trading",
       "goal": "Trade earlier into enemy burst",
       "drill": "Review burst windows and compare cooldown timing."
@@ -388,6 +457,21 @@ public sealed class ManualAnalysisWorkflowService : IManualAnalysisWorkflowServi
       "expectedValue": "before lethal burst",
       "unit": "timing",
       "note": "Can be re-checked in video review."
+    }
+  ],
+  "participantFindings": [
+    {
+      "participant": "Tracked Player",
+      "classSpec": "Warlock / Affliction",
+      "strengths": [
+        "Maintained pressure during safe windows"
+      ],
+      "mistakes": [
+        "Delayed wall into enemy burst"
+      ],
+      "nextFocus": [
+        "Pre-wall earlier when both enemy DPS commit"
+      ]
     }
   ]
 }

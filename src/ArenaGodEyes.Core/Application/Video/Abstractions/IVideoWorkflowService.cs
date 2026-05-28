@@ -8,6 +8,16 @@ public interface IVideoWorkflowService
 
     Task<ObsConnectionStatus> TestObsConnectionAsync(CancellationToken cancellationToken = default);
 
+    Task<ObsSceneSetupResult> EnsureWowSceneAsync(
+        string windowTitle,
+        string executableName,
+        string? windowClassName,
+        string captureMode,
+        bool captureCursor,
+        string? sceneName,
+        string? sourceName,
+        CancellationToken cancellationToken = default);
+
     Task<ObsRecordingStartResult> StartRecordingAsync(string? matchId, CancellationToken cancellationToken = default);
 
     Task<ObsRecordingStopResult> StopRecordingAsync(string? matchId, CancellationToken cancellationToken = default);

@@ -303,32 +303,69 @@ public sealed class WowKnowledgeService
         foreach (var classNode in rootElement.EnumerateObject())
         {
             var className = classNode.Name;
-            foreach (var entry in classNode.Value.EnumerateArray())
+            if (classNode.Value.ValueKind == JsonValueKind.Array)
             {
-                if (!entry.TryGetProperty("name", out var nameElement))
+                LoadNamedEntryArray(entriesBySpell, className, null, classNode.Value, fallbackCategory);
+                continue;
+            }
+
+            if (classNode.Value.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            foreach (var specNode in classNode.Value.EnumerateObject())
+            {
+                if (specNode.Value.ValueKind != JsonValueKind.Array)
                 {
                     continue;
                 }
 
-                var spellName = nameElement.GetString();
-                var category = entry.TryGetProperty("category", out var categoryElement)
-                    ? categoryElement.GetString()
-                    : fallbackCategory;
-                var specs = entry.TryGetProperty("specs", out var specsElement)
-                    ? specsElement.EnumerateArray().Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item)).Cast<string>().ToList()
-                    : [];
+                LoadNamedEntryArray(entriesBySpell, className, specNode.Name, specNode.Value, fallbackCategory);
+            }
+        }
+    }
 
-                if (specs.Count == 0)
-                {
-                    AddEntry(entriesBySpell, spellName, className, null, category, null, false);
-                    continue;
-                }
+    private static void LoadNamedEntryArray(
+        IDictionary<string, List<SpellKnowledgeEntry>> entriesBySpell,
+        string className,
+        string? specLabelFromGroup,
+        JsonElement arrayElement,
+        string? fallbackCategory)
+    {
+        foreach (var entry in arrayElement.EnumerateArray())
+        {
+            if (!entry.TryGetProperty("name", out var nameElement))
+            {
+                continue;
+            }
 
+            var spellName = nameElement.GetString();
+            var category = entry.TryGetProperty("category", out var categoryElement)
+                ? categoryElement.GetString()
+                : fallbackCategory;
+            var specs = entry.TryGetProperty("specs", out var specsElement) && specsElement.ValueKind == JsonValueKind.Array
+                ? specsElement.EnumerateArray().Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item)).Cast<string>().ToList()
+                : [];
+
+            if (specs.Count > 0)
+            {
                 foreach (var specLabel in specs)
                 {
                     AddEntry(entriesBySpell, spellName, className, specLabel, category, null, true);
                 }
+
+                continue;
             }
+
+            AddEntry(
+                entriesBySpell,
+                spellName,
+                className,
+                specLabelFromGroup,
+                category,
+                null,
+                !string.IsNullOrWhiteSpace(specLabelFromGroup));
         }
     }
 
