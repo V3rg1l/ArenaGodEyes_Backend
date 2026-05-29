@@ -201,6 +201,7 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
             {
                 Match = match,
                 MatchId = match.MatchId,
+                SpellId = spellMetric.SpellId,
                 SpellName = spellMetric.SpellName,
                 NormalizedSpellName = enriched.NormalizedSpellName,
                 CastCount = spellMetric.CastCount,
@@ -740,9 +741,9 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
             DateTimeOffset startedAt,
             int? durationSeconds)
         {
-            var casts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            var damage = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-            var healing = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            var casts = new Dictionary<SpellMetricKey, int>();
+            var damage = new Dictionary<SpellMetricKey, long>();
+            var healing = new Dictionary<SpellMetricKey, long>();
             var playerSpellNamesBySourceGuid = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             var interrupts = new List<object>();
             var deaths = new List<object>();
@@ -750,25 +751,23 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
             foreach (var line in lines)
             {
                 TrackPlayerSpell(playerSpellNamesBySourceGuid, line);
+                var spellMetricKey = TryBuildSpellMetricKey(line);
 
-                if (string.Equals(line.EventName, "SPELL_CAST_SUCCESS", StringComparison.Ordinal))
+                if (spellMetricKey is not null && string.Equals(line.EventName, "SPELL_CAST_SUCCESS", StringComparison.Ordinal))
                 {
-                    var key = line.Fields.ElementAtOrDefault(10)?.Trim('"') ?? "Unknown Spell";
-                    casts[key] = casts.TryGetValue(key, out var count) ? count + 1 : 1;
+                    casts[spellMetricKey] = casts.TryGetValue(spellMetricKey, out var count) ? count + 1 : 1;
                 }
 
-                if (line.EventName.Contains("DAMAGE", StringComparison.Ordinal))
+                if (spellMetricKey is not null && line.EventName.Contains("DAMAGE", StringComparison.Ordinal))
                 {
-                    var spellName = line.Fields.ElementAtOrDefault(10)?.Trim('"') ?? line.EventName;
                     var amount = ParseTrailingInt(line.Fields);
-                    damage[spellName] = damage.TryGetValue(spellName, out var current) ? current + amount : amount;
+                    damage[spellMetricKey] = damage.TryGetValue(spellMetricKey, out var current) ? current + amount : amount;
                 }
 
-                if (line.EventName.Contains("HEAL", StringComparison.Ordinal))
+                if (spellMetricKey is not null && line.EventName.Contains("HEAL", StringComparison.Ordinal))
                 {
-                    var spellName = line.Fields.ElementAtOrDefault(10)?.Trim('"') ?? line.EventName;
                     var amount = ParseTrailingInt(line.Fields);
-                    healing[spellName] = healing.TryGetValue(spellName, out var current) ? current + amount : amount;
+                    healing[spellMetricKey] = healing.TryGetValue(spellMetricKey, out var current) ? current + amount : amount;
                 }
 
                 if (string.Equals(line.EventName, "SPELL_INTERRUPT", StringComparison.Ordinal))
@@ -792,10 +791,10 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
                 }
             }
 
-            var allSpellNames = casts.Keys
+            var allSpellMetrics = casts.Keys
                 .Concat(damage.Keys)
                 .Concat(healing.Keys)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Distinct()
                 .ToList();
             var effectiveDuration = Math.Max(1, durationSeconds ?? ToRelativeSeconds(lines.LastOrDefault()?.Timestamp, startedAt));
 
@@ -809,18 +808,37 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
                     Math.Round(damage.Values.Sum() / (double)effectiveDuration, 2),
                     Math.Round(healing.Values.Sum() / (double)effectiveDuration, 2),
                     Math.Round(casts.Values.Sum() / Math.Max(1d, effectiveDuration / 60d), 2)),
-                allSpellNames
-                    .Select(spellName => new StructuredSpellMetric(
-                        spellName,
-                        casts.TryGetValue(spellName, out var castCount) ? castCount : 0,
-                        damage.TryGetValue(spellName, out var totalDamage) ? totalDamage : 0,
-                        healing.TryGetValue(spellName, out var totalHealing) ? totalHealing : 0))
+                allSpellMetrics
+                    .Select(spell => new StructuredSpellMetric(
+                        spell.SpellId,
+                        spell.SpellName,
+                        casts.TryGetValue(spell, out var castCount) ? castCount : 0,
+                        damage.TryGetValue(spell, out var totalDamage) ? totalDamage : 0,
+                        healing.TryGetValue(spell, out var totalHealing) ? totalHealing : 0))
                     .OrderByDescending(item => item.TotalDamage + item.TotalHealing)
                     .ThenByDescending(item => item.CastCount)
                     .ToList(),
                 playerSpellNamesBySourceGuid,
                 interrupts,
                 deaths);
+        }
+
+        private static SpellMetricKey? TryBuildSpellMetricKey(ParsedCombatLogLine line)
+        {
+            var spellName = line.Fields.ElementAtOrDefault(10)?.Trim('"');
+            if (string.IsNullOrWhiteSpace(spellName))
+            {
+                return null;
+            }
+
+            return new SpellMetricKey(ParseNullableSpellId(line.Fields.ElementAtOrDefault(9)), spellName);
+        }
+
+        private static int? ParseNullableSpellId(string? value)
+        {
+            return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : null;
         }
 
         private static void TrackPlayerSpell(
@@ -891,10 +909,15 @@ public sealed class MatchImportOrchestrator : IMatchImportOrchestrator
         double CastsPerMinute);
 
     private sealed record StructuredSpellMetric(
+        int? SpellId,
         string SpellName,
         int CastCount,
         long TotalDamage,
         long TotalHealing);
+
+    private sealed record SpellMetricKey(
+        int? SpellId,
+        string SpellName);
 
     private static class MatchJsonBuilder
     {

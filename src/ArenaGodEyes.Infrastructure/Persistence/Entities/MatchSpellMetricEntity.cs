@@ -6,6 +6,8 @@ public sealed class MatchSpellMetricEntity
 
     public string MatchId { get; set; } = string.Empty;
 
+    public int? SpellId { get; set; }
+
     public string SpellName { get; set; } = string.Empty;
 
     public string NormalizedSpellName { get; set; } = string.Empty;

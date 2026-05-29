@@ -1,6 +1,7 @@
 namespace ArenaGodEyes.Core.Application.Matches.Models;
 
 public sealed record MatchSpellMetricItem(
+    int? SpellId,
     string SpellName,
     string NormalizedSpellName,
     int CastCount,

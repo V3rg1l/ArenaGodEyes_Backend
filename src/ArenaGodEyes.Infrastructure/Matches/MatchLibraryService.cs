@@ -151,6 +151,7 @@ public sealed class MatchLibraryService : IMatchLibraryService
                 .ThenByDescending(metric => metric.CastCount)
                 .ThenBy(metric => metric.SpellName)
                 .Select(metric => new MatchSpellMetricItem(
+                    metric.SpellId,
                     metric.SpellName,
                     metric.NormalizedSpellName,
                     metric.CastCount,

@@ -137,6 +137,7 @@ internal static class DatabaseSchemaUpgrader
             );
             """, cancellationToken);
         await EnsureColumnAsync(connection, "MatchSpellMetrics", "NormalizedSpellName", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "MatchSpellMetrics", "SpellId", "INTEGER", cancellationToken);
         await EnsureColumnAsync(connection, "MatchSpellMetrics", "ClassName", "TEXT", cancellationToken);
         await EnsureColumnAsync(connection, "MatchSpellMetrics", "SpecLabel", "TEXT", cancellationToken);
         await EnsureColumnAsync(connection, "MatchSpellMetrics", "PrimaryCategory", "TEXT", cancellationToken);

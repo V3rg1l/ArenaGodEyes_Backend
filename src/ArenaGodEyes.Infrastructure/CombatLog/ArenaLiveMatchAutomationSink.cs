@@ -3,7 +3,6 @@ using ArenaGodEyes.Core.Application.CombatLog.Models;
 using ArenaGodEyes.Core.Application.Matches.Abstractions;
 using ArenaGodEyes.Core.Application.Settings.Abstractions;
 using ArenaGodEyes.Core.Application.Settings.Models;
-using ArenaGodEyes.Core.Application.Video.Abstractions;
 using ArenaGodEyes.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -46,7 +45,7 @@ public sealed class ArenaLiveMatchAutomationSink : ICombatLogEventSink, ILiveAre
             _activeSession?.ShouldTrack ?? false,
             _activeSession?.SourceFile,
             _activeSession?.StartedAt,
-            _activeSession?.StartedObsAutomatically ?? false,
+            false,
             _lastCompletedMatchId,
             _lastCompletedAt);
 
@@ -142,27 +141,9 @@ public sealed class ArenaLiveMatchAutomationSink : ICombatLogEventSink, ILiveAre
             isRanked,
             shouldTrack);
 
-        if (!shouldTrack || !settings.EnableRecording || !settings.EnableObsRecording)
+        if (!shouldTrack || !settings.EnableRecording)
         {
             return;
-        }
-
-        try
-        {
-            await using var scope = _scopeFactory.CreateAsyncScope();
-            var videoWorkflowService = scope.ServiceProvider.GetRequiredService<IVideoWorkflowService>();
-            var result = await videoWorkflowService.StartRecordingAsync(null, cancellationToken);
-            _activeSession.StartedObsAutomatically = result.Started && !result.WasAlreadyRecording;
-
-            _logger.LogInformation(
-                "OBS auto-start result for live arena session: Started={Started}, WasAlreadyRecording={WasAlreadyRecording}, Message={Message}",
-                result.Started,
-                result.WasAlreadyRecording,
-                result.Message);
-        }
-        catch (Exception exception)
-        {
-            _logger.LogWarning(exception, "OBS auto-start failed for live arena session.");
         }
     }
 
@@ -206,29 +187,6 @@ public sealed class ArenaLiveMatchAutomationSink : ICombatLogEventSink, ILiveAre
         catch (Exception exception)
         {
             _logger.LogError(exception, "Failed to import completed live arena session from {SourceFile}.", completedSession.SourceFile);
-        }
-
-        if (!completedSession.StartedObsAutomatically)
-        {
-            return;
-        }
-
-        try
-        {
-            await using var scope = _scopeFactory.CreateAsyncScope();
-            var videoWorkflowService = scope.ServiceProvider.GetRequiredService<IVideoWorkflowService>();
-            var stopResult = await videoWorkflowService.StopRecordingAsync(importedMatchId, cancellationToken);
-
-            _logger.LogInformation(
-                "OBS auto-stop result for live arena session: Stopped={Stopped}, MatchId={MatchId}, Attached={AttachedToMatch}, Message={Message}",
-                stopResult.Stopped,
-                importedMatchId,
-                stopResult.AttachedToMatch,
-                stopResult.Message);
-        }
-        catch (Exception exception)
-        {
-            _logger.LogWarning(exception, "OBS auto-stop failed for completed live arena session.");
         }
     }
 
@@ -302,8 +260,6 @@ public sealed class ArenaLiveMatchAutomationSink : ICombatLogEventSink, ILiveAre
         public bool ShouldTrack { get; }
 
         public string SourceFile { get; }
-
-        public bool StartedObsAutomatically { get; set; }
 
         public DateTimeOffset StartedAt { get; }
     }
